@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#10251f">
+    <title>炸金花牌桌</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="返回首页">
+          <span class="brand-mark">金花</span>
+          <span>
+            <span class="brand-title">炸金花牌桌</span>
+            <span class="brand-subtitle">无数据库在线房间</span>
+          </span>
+        </a>
+        <span id="connectionBadge" class="connection-badge">离线</span>
+      </header>
+
+      <p id="statusText" class="status-text" role="status" aria-live="polite">正在连接服务器...</p>
+
+      <section id="lobbyView" class="view lobby-view" aria-labelledby="lobbyTitle">
+        <div class="intro-panel">
+          <div class="table-chip">纯内存房间 · 结束即清空 · 手机浏览器可玩</div>
+          <h1 id="lobbyTitle">开一桌干净利落的三张牌。</h1>
+          <p>房主配置玩法和底注，朋友输入房间号加入。所有结算只保留在本局房间里。</p>
+        </div>
+
+        <section class="control-panel" aria-label="创建或加入房间">
+          <div class="field-group">
+            <label for="nicknameInput">昵称</label>
+            <input id="nicknameInput" autocomplete="nickname" maxlength="16" placeholder="输入昵称">
+          </div>
+
+          <div class="mode-grid">
+            <div class="field-group">
+              <label for="modeSelect">模式</label>
+              <select id="modeSelect">
+                <option value="zha_jing_hua">炸金花</option>
+                <option value="tractor">拖拉机</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="maxPlayersInput">人数</label>
+              <input id="maxPlayersInput" type="number" min="2" max="12" step="1">
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="field-group">
+              <label for="baseBetInput">底注</label>
+              <input id="baseBetInput" type="number" min="1" step="1">
+            </div>
+            <div class="field-group">
+              <label for="bonusInput">喜钱</label>
+              <input id="bonusInput" type="number" min="0" step="1">
+            </div>
+            <div class="field-group">
+              <label for="peekCostInput">看牌费</label>
+              <input id="peekCostInput" type="number" min="0" step="1">
+            </div>
+            <div class="field-group">
+              <label for="betOptionsInput">下注档</label>
+              <input id="betOptionsInput" inputmode="numeric" placeholder="5/10/20/50">
+            </div>
+          </div>
+
+          <button id="createRoomBtn" class="primary-btn wide-btn" type="button">创建房间</button>
+
+          <div class="join-strip">
+            <div class="field-group compact-field">
+              <label for="roomCodeInput">房间号</label>
+              <input id="roomCodeInput" autocomplete="off" maxlength="8" placeholder="例如 A8K29Q">
+            </div>
+            <button id="joinRoomBtn" class="secondary-btn" type="button">加入</button>
+          </div>
+        </section>
+      </section>
+
+      <section id="tableView" class="view table-view" hidden>
+        <section class="room-panel">
+          <div>
+            <p class="section-kicker">房间</p>
+            <h2 id="roomCodeText">------</h2>
+            <p data-room-meta class="room-meta">等待同步房间配置</p>
+          </div>
+          <div class="room-actions">
+            <button id="copyRoomBtn" class="ghost-btn" type="button">复制</button>
+            <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
+          </div>
+        </section>
+
+        <section class="felt-table">
+          <div class="table-metrics">
+            <article>
+              <span>奖池</span>
+              <strong id="potText">0</strong>
+            </article>
+            <article>
+              <span>当前发言</span>
+              <strong id="currentTurnText">-</strong>
+            </article>
+          </div>
+
+          <div class="card-zone">
+            <section class="hand-panel">
+              <div class="panel-title">
+                <h3>我的牌</h3>
+                <span>默认暗牌</span>
+              </div>
+              <div id="myCards" class="card-row"></div>
+            </section>
+
+            <section class="hand-panel">
+              <div class="panel-title">
+                <h3>偷看的牌</h3>
+                <span>每手一次</span>
+              </div>
+              <div id="peekedCards" class="peek-zone"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="actions-panel">
+          <div id="actions" class="actions-grid"></div>
+          <section id="settlementPanel" class="settlement-panel" hidden>
+            <h3 data-settlement-title>本手结算</h3>
+            <p data-settlement-detail>等待结算结果</p>
+          </section>
+          <div class="round-actions">
+            <button id="startHandBtn" class="primary-btn" type="button">开始本手</button>
+            <button id="continueHandBtn" class="secondary-btn" type="button">继续开牌</button>
+            <button id="finishGameBtn" class="ghost-btn" type="button">最终结算</button>
+          </div>
+        </section>
+
+        <aside class="players-panel">
+          <div class="panel-title">
+            <h3>玩家</h3>
+            <span>实时座位</span>
+          </div>
+          <ul id="playerList" class="player-list"></ul>
+        </aside>
+      </section>
+
+      <section id="finalView" class="view final-view" hidden>
+        <div class="final-card">
+          <p class="section-kicker">最终结算</p>
+          <h2>金币榜单</h2>
+          <ol id="rankingList" class="ranking-list"></ol>
+          <button id="backHomeBtn" class="primary-btn wide-btn" type="button">返回首页</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

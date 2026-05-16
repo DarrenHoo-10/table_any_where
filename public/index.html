@@ -36,6 +36,11 @@
             <input id="nicknameInput" autocomplete="nickname" maxlength="16" placeholder="输入昵称">
           </div>
 
+          <div class="field-group">
+            <label>头像</label>
+            <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
+          </div>
+
           <div class="mode-grid">
             <div class="field-group">
               <label for="modeSelect">模式</label>
@@ -62,6 +67,10 @@
             <div class="field-group">
               <label for="betOptionsInput">下注档</label>
               <input id="betOptionsInput" inputmode="numeric" placeholder="5/10/20/50">
+            </div>
+            <div class="field-group">
+              <label for="actionTimeoutInput">行动时间（分钟）</label>
+              <input id="actionTimeoutInput" type="number" min="1" max="60" step="1">
             </div>
           </div>
 
@@ -128,8 +137,8 @@
             <p data-settlement-detail>等待结算结果</p>
           </section>
           <div class="round-actions">
-            <button id="startHandBtn" class="primary-btn" type="button">开始本手</button>
-            <button id="continueHandBtn" class="secondary-btn" type="button">继续开牌</button>
+            <button id="startHandBtn" class="primary-btn" type="button">开始发牌</button>
+            <button id="continueHandBtn" class="secondary-btn" type="button">继续发牌</button>
             <button id="finishGameBtn" class="ghost-btn" type="button">最终结算</button>
           </div>
         </section>

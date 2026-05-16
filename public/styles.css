@@ -207,6 +207,51 @@ h1 {
   margin-bottom: 14px;
 }
 
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.avatar-option {
+  display: grid;
+  min-height: 96px;
+  place-items: center;
+  gap: 4px;
+  border: 1px solid rgba(245, 215, 125, 0.18);
+  border-radius: 16px;
+  padding: 7px 4px 5px;
+  color: var(--muted);
+  background:
+    linear-gradient(180deg, rgba(255, 248, 226, 0.08), rgba(255, 248, 226, 0.02)),
+    rgba(0, 0, 0, 0.24);
+  font-size: 13px;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.avatar-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 215, 125, 0.46);
+}
+
+.avatar-option.is-selected {
+  border-color: rgba(245, 215, 125, 0.78);
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(245, 215, 125, 0.2), rgba(245, 215, 125, 0.06)),
+    rgba(0, 0, 0, 0.24);
+  box-shadow: 0 0 0 3px rgba(245, 215, 125, 0.12);
+}
+
+.avatar-img {
+  display: block;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  object-fit: cover;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.2));
+}
+
 label {
   color: var(--muted);
   font-size: 13px;
@@ -493,6 +538,7 @@ select:focus {
 .player-card,
 .ranking-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   border-radius: 14px;
@@ -506,6 +552,33 @@ select:focus {
 
 .player-card.is-turn {
   background: rgba(245, 215, 125, 0.16);
+  border: 1px solid rgba(245, 215, 125, 0.7);
+  box-shadow: 0 0 0 3px rgba(245, 215, 125, 0.1);
+}
+
+.player-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-avatar {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(245, 215, 125, 0.3);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.player-avatar .avatar-img {
+  width: 46px;
+  height: 46px;
+  filter: none;
 }
 
 .player-card strong,
@@ -581,6 +654,10 @@ select:focus {
   .mode-grid,
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .avatar-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .room-actions {

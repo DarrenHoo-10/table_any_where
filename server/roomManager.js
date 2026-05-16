@@ -116,6 +116,7 @@ class RoomManager {
           this.settleHand(room, 'player_left');
         } else if (wasCurrentTurn) {
           hand.currentTurnPlayerId = hand.activePlayerIds[currentIndex % hand.activePlayerIds.length];
+          this.resetTurnDeadline(room);
         }
       }
     }
@@ -135,7 +136,7 @@ class RoomManager {
     return room;
   }
 
-  startHand(roomId, playerId) {
+  startHand(roomId, playerId, now = Date.now()) {
     const room = this.requireRoom(roomId);
     this.requireHost(room, playerId);
     if (!['lobby', 'between_hands'].includes(room.status)) {
@@ -146,6 +147,7 @@ class RoomManager {
     if (room.finalSettlement) throw new Error('房间已经结算。');
 
     const playerIds = room.players.map((player) => player.id);
+    const currentTurnPlayerId = this.getOpeningTurnPlayerId(room, playerIds);
     const hands = dealHands(playerIds);
     let pot = 0;
     room.players.forEach((player) => {
@@ -164,9 +166,11 @@ class RoomManager {
       viewedPlayerIds: [],
       peekUsedPlayerIds: [],
       currentBet: null,
-      currentTurnPlayerId: playerIds[0],
+      currentTurnPlayerId,
       actionLog: [],
-      startedAt: Date.now(),
+      startedAt: now,
+      turnStartedAt: now,
+      turnDeadlineAt: this.getTurnDeadline(room, now),
     };
 
     return room;
@@ -495,6 +499,54 @@ class RoomManager {
     const currentIndex = hand.activePlayerIds.indexOf(hand.currentTurnPlayerId);
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % hand.activePlayerIds.length;
     hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    this.resetTurnDeadline(room);
+  }
+
+  expireCurrentTurn(roomId, now = Date.now()) {
+    const room = this.requireRoom(roomId);
+    const hand = room.hand;
+    if (room.status !== 'playing' || !hand || !hand.currentTurnPlayerId) return null;
+    if (!hand.turnDeadlineAt || now < hand.turnDeadlineAt) return null;
+
+    const playerId = hand.currentTurnPlayerId;
+    if (!hand.activePlayerIds.includes(playerId)) {
+      this.advanceTurn(room);
+      return null;
+    }
+
+    const currentIndex = hand.activePlayerIds.indexOf(playerId);
+    hand.foldedPlayerIds.push(playerId);
+    hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
+    hand.actionLog.push({ type: 'timeout_fold', playerId, at: now });
+
+    if (hand.activePlayerIds.length === 1) {
+      this.settleHand(room, 'action_timeout');
+    } else {
+      const nextIndex = currentIndex % hand.activePlayerIds.length;
+      hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+      this.resetTurnDeadline(room, now);
+    }
+
+    return { room, playerId };
+  }
+
+  resetTurnDeadline(room, now = Date.now()) {
+    if (!room.hand) return;
+    room.hand.turnStartedAt = now;
+    room.hand.turnDeadlineAt = this.getTurnDeadline(room, now);
+  }
+
+  getTurnDeadline(room, now = Date.now()) {
+    return now + room.config.actionTimeoutSeconds * 1000;
+  }
+
+  getOpeningTurnPlayerId(room, playerIds) {
+    const winnerId = room.lastSettlement && Array.isArray(room.lastSettlement.winnerIds)
+      ? room.lastSettlement.winnerIds[0]
+      : null;
+    const winnerIndex = winnerId ? playerIds.indexOf(winnerId) : -1;
+    if (winnerIndex === -1) return playerIds[0];
+    return playerIds[(winnerIndex + 1) % playerIds.length];
   }
 
   serializeRoom(room, viewerId) {
@@ -524,6 +576,8 @@ class RoomManager {
       id: hand.id,
       pot: hand.pot,
       currentTurnPlayerId: hand.currentTurnPlayerId,
+      turnStartedAt: hand.turnStartedAt,
+      turnDeadlineAt: hand.turnDeadlineAt,
       activePlayerIds: hand.activePlayerIds.slice(),
       foldedPlayerIds: hand.foldedPlayerIds.slice(),
       viewedPlayerIds: hand.viewedPlayerIds.slice(),

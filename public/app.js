@@ -1,6 +1,5 @@
 const DEFAULT_ROOM_CONFIG = {
   mode: 'zha_jing_hua',
-  maxPlayers: 6,
   initialCoins: 1000,
   baseBet: 5,
   bonus: 50,
@@ -109,7 +108,6 @@ const els = {};
   'modeHelpBtn',
   'modeRulesPreview',
   'roomRulesBrief',
-  'maxPlayersInput',
   'initialCoinsInput',
   'baseBetInput',
   'bonusInput',
@@ -848,7 +846,6 @@ function showManualCopy(value) {
 function readRoomConfig() {
   return {
     mode: els.modeSelect.value,
-    maxPlayers: clampNumber(els.maxPlayersInput.value, 2, 12, DEFAULT_ROOM_CONFIG.maxPlayers),
     initialCoins: clampNumber(els.initialCoinsInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.initialCoins),
     baseBet: clampNumber(els.baseBetInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.baseBet),
     bonus: clampNumber(els.bonusInput.value, 0, 100000000, DEFAULT_ROOM_CONFIG.bonus),
@@ -859,7 +856,6 @@ function readRoomConfig() {
 
 function applyDefaultConfig() {
   els.modeSelect.value = DEFAULT_ROOM_CONFIG.mode;
-  els.maxPlayersInput.value = DEFAULT_ROOM_CONFIG.maxPlayers;
   els.initialCoinsInput.value = DEFAULT_ROOM_CONFIG.initialCoins;
   els.baseBetInput.value = DEFAULT_ROOM_CONFIG.baseBet;
   els.bonusInput.value = DEFAULT_ROOM_CONFIG.bonus;

@@ -43,7 +43,6 @@ const MODE_RANKS = {
 };
 
 function normalizeConfig(input = {}) {
-  const maxPlayers = clampInt(input.maxPlayers ?? input.playerCount ?? 6, MIN_PLAYERS, MAX_PLAYERS);
   const normalizedBetOptions = Array.isArray(input.betOptions)
     ? input.betOptions
       .map((value) => Math.floor(Number(value)))
@@ -54,7 +53,7 @@ function normalizeConfig(input = {}) {
 
   return {
     mode: MODE_RANKS[input.mode] ? input.mode : 'zha_jing_hua',
-    maxPlayers,
+    maxPlayers: MAX_PLAYERS,
     initialCoins: clampInt(input.initialCoins ?? INITIAL_COINS, 1, MAX_COINS),
     baseBet: clampInt(input.baseBet ?? 5, 1, MAX_COINS),
     bonus: clampInt(input.bonus ?? 50, 0, MAX_COINS),

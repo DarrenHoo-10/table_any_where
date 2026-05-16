@@ -11,6 +11,19 @@ const RED_SUITS = new Set(['H', 'D']);
 const CARD_SIZE = { width: 0.42, height: 0.62 };
 const TABLE_RADIUS = 3.05;
 const LABEL_RADIUS = 4.15;
+const PLAYER_CHIP_LIMIT = 50;
+const POT_CHIP_LIMIT = 50;
+const CHIP_HEIGHT = 0.026;
+const CHIP_RADIUS = 0.092;
+const CHIP_GEOMETRY = new THREE.CylinderGeometry(CHIP_RADIUS, CHIP_RADIUS, CHIP_HEIGHT, 36);
+const CHIP_PALETTES = [
+  { face: 0xf5d77d, edge: 0x76551a, ink: '#3a2711' },
+  { face: 0x2fbf9c, edge: 0x0b5546, ink: '#062b25' },
+  { face: 0xd55362, edge: 0x6a2530, ink: '#fff0f0' },
+  { face: 0x4f75d8, edge: 0x23346c, ink: '#eef4ff' },
+  { face: 0xf3f0e6, edge: 0x8a8272, ink: '#24221d' },
+  { face: 0x242832, edge: 0x0e1118, ink: '#f7e7b0' },
+];
 
 function createTableScene3D(container) {
   return new TableScene3D(container);
@@ -23,16 +36,20 @@ class TableScene3D {
     this.scene.background = null;
     this.playersGroup = new THREE.Group();
     this.cardsGroup = new THREE.Group();
+    this.potGroup = new THREE.Group();
     this.labelLayer = document.createElement('div');
     this.labelLayer.className = 'table-scene-label-layer';
     this.labelsById = new Map();
     this.cardMeshes = [];
+    this.materialsByDenomination = new Map();
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.yaw = -0.42;
     this.pitch = 0.88;
     this.distance = 7.9;
     this.lastHandId = '';
+    this.lastSettlementAt = 0;
+    this.potCollectAnimation = null;
     this.dealStartedAt = 0;
     this.disposed = false;
     this.drag = null;
@@ -176,6 +193,7 @@ class TableScene3D {
 
     this.scene.add(this.playersGroup);
     this.scene.add(this.cardsGroup);
+    this.scene.add(this.potGroup);
   }
 
   bindEvents() {
@@ -222,6 +240,7 @@ class TableScene3D {
     if (!snapshot.room) {
       this.clearPlayers();
       this.clearCards();
+      this.clearPot();
       return;
     }
 
@@ -232,11 +251,22 @@ class TableScene3D {
     }
 
     const players = Array.isArray(snapshot.players) ? snapshot.players : [];
-    this.renderPlayers(players, hand, snapshot.viewerId);
+    const config = snapshot.room.config || {};
+    const settlement = snapshot.room.lastSettlement || null;
+    if (settlement && settlement.settledAt && settlement.settledAt !== this.lastSettlementAt) {
+      this.lastSettlementAt = settlement.settledAt;
+      this.potCollectAnimation = {
+        startedAt: performance.now(),
+        winnerIds: settlement.winnerIds || [],
+        pot: Number(settlement.pot || 0),
+      };
+    }
+    this.renderPlayers(players, hand, snapshot.viewerId, config);
+    this.renderPot(hand, config, players);
     this.renderCards(players, hand, snapshot.viewerId);
   }
 
-  renderPlayers(players, hand, viewerId) {
+  renderPlayers(players, hand, viewerId, config) {
     this.clearPlayers();
     const activeIds = new Set(hand.activePlayerIds || []);
     const foldedIds = new Set(hand.foldedPlayerIds || []);
@@ -260,7 +290,7 @@ class TableScene3D {
       marker.castShadow = true;
       this.playersGroup.add(marker);
 
-      const chips = createChipStack(player.coins);
+      const chips = this.createChipStack(player.coins, config, PLAYER_CHIP_LIMIT, 7);
       chips.position
         .set(tableSeat.x, 0.22, tableSeat.z)
         .addScaledVector(chipDirection, -0.28)
@@ -280,13 +310,44 @@ class TableScene3D {
       label.querySelector('img').src = player.avatarSrc || '';
       label.querySelector('img').alt = player.avatarLabel || '';
       label.querySelector('strong').textContent = player.nickname || '玩家';
-      label.querySelector('span').textContent = playerStatus(player, hand);
+      label.querySelector('span').textContent = `${playerStatus(player, hand)} · ${formatCompactAmount(player.coins)}`;
       label.hidden = false;
     });
 
     this.labelsById.forEach((label, id) => {
       if (!players.some((player) => player.id === id)) label.hidden = true;
     });
+  }
+
+  renderPot(hand, config, players) {
+    this.clearPot();
+    const pot = Number(hand && hand.pot) || 0;
+    const collect = this.potCollectAnimation;
+    if (!pot && (!collect || performance.now() - collect.startedAt > 1200)) return;
+
+    const amount = pot || collect.pot || 0;
+    const chips = this.createChipStack(amount, config, POT_CHIP_LIMIT, 9);
+    chips.position.set(0.62, 0.31, -0.12);
+    chips.rotation.y = -0.24;
+
+    if (!pot && collect) {
+      const winners = (collect.winnerIds || [])
+        .map((id) => players.findIndex((player) => player.id === id))
+        .filter((index) => index >= 0);
+      const winnerIndex = winners.length ? winners[0] : -1;
+      if (winnerIndex >= 0) {
+        const seat = seatPosition(winnerIndex, players.length, 2.64, 0.76);
+        const target = new THREE.Vector3(seat.x * 0.78, 0.34, seat.z * 0.78);
+        chips.userData.collecting = {
+          startedAt: collect.startedAt,
+          source: chips.position.clone(),
+          target,
+          sourceRotation: chips.rotation.y,
+        };
+      }
+    }
+
+    this.potGroup.add(chips);
   }
 
   renderCards(players, hand, viewerId) {
@@ -389,6 +450,10 @@ class TableScene3D {
     });
   }
 
+  clearPot() {
+    while (this.potGroup.children.length) this.potGroup.remove(this.potGroup.children[0]);
+  }
+
   clearCards() {
     this.cardMeshes.forEach((mesh) => {
       mesh.geometry.dispose();
@@ -412,6 +477,7 @@ class TableScene3D {
     if (this.disposed) return;
     this.updateCamera();
     this.animateCards(now);
+    this.animatePotCollect(now);
     this.renderer.render(this.scene, this.camera);
     this.positionLabels();
     requestAnimationFrame(this.renderFrame);
@@ -437,6 +503,108 @@ class TableScene3D {
       mesh.quaternion.slerpQuaternions(this.deck.quaternion, mesh.userData.targetQuaternion, eased);
       if (progress >= 1) mesh.userData.shouldAnimate = false;
     });
+  }
+
+  animatePotCollect(now) {
+    const stack = this.potGroup.children.find((child) => child.userData.collecting);
+    if (!stack) return;
+    const collect = stack.userData.collecting;
+    const progress = clamp((now - collect.startedAt) / 920, 0, 1);
+    const eased = easeOutCubic(progress);
+    stack.position.lerpVectors(collect.source, collect.target, eased);
+    stack.scale.setScalar(1 - eased * 0.26);
+    stack.rotation.y = collect.sourceRotation + eased * 1.8;
+    if (progress >= 1) {
+      this.clearPot();
+      this.potCollectAnimation = null;
+    }
+  }
+
+  createChipStack(amount, config, maxVisibleChips, maxStackHeight) {
+    const group = new THREE.Group();
+    const plan = createChipPlan(amount, config, maxVisibleChips);
+    const stackGap = 0.18;
+    const rowWidth = Math.min(4, plan.length);
+
+    if (!rowWidth) return group;
+
+    plan.forEach((entry, planIndex) => {
+      const col = planIndex % rowWidth;
+      const row = Math.floor(planIndex / rowWidth);
+      const visibleCount = Math.min(entry.count, maxStackHeight);
+      const stackX = (col - (rowWidth - 1) / 2) * stackGap + (row % 2) * 0.06;
+      const stackZ = row * 0.16;
+      for (let chipIndex = 0; chipIndex < visibleCount; chipIndex += 1) {
+        const chip = this.createChipMesh(entry.denomination);
+        chip.position.set(
+          stackX + Math.sin((chipIndex + planIndex) * 1.7) * 0.006,
+          chipIndex * CHIP_HEIGHT,
+          stackZ + Math.cos((chipIndex + planIndex) * 1.3) * 0.005
+        );
+        chip.rotation.y = (chipIndex % 4) * 0.18;
+        chip.castShadow = true;
+        chip.receiveShadow = true;
+        group.add(chip);
+      }
+
+      if (!visibleCount) return;
+      const crown = this.createChipCrown(entry.denomination);
+      crown.position.set(stackX, visibleCount * CHIP_HEIGHT + 0.006, stackZ);
+      group.add(crown);
+    });
+
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(Math.max(0.22, rowWidth * 0.12), 36),
+      new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+      })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = -0.018;
+    group.add(shadow);
+
+    return group;
+  }
+
+  createChipMesh(denomination) {
+    const materials = this.getChipMaterials(denomination);
+    return new THREE.Mesh(CHIP_GEOMETRY, [materials.edge, materials.face, materials.face]);
+  }
+
+  createChipCrown(denomination) {
+    const materials = this.getChipMaterials(denomination);
+    const crown = new THREE.Mesh(
+      new THREE.TorusGeometry(CHIP_RADIUS * 0.74, 0.006, 6, 28),
+      materials.edge
+    );
+    crown.rotation.x = Math.PI / 2;
+    return crown;
+  }
+
+  getChipMaterials(denomination) {
+    const key = String(denomination);
+    if (this.materialsByDenomination.has(key)) return this.materialsByDenomination.get(key);
+
+    const index = this.materialsByDenomination.size % CHIP_PALETTES.length;
+    const palette = CHIP_PALETTES[index];
+    const texture = createChipFaceTexture(denomination, palette);
+    const materials = {
+      face: new THREE.MeshStandardMaterial({
+        map: texture,
+        roughness: 0.32,
+        metalness: 0.24,
+      }),
+      edge: new THREE.MeshStandardMaterial({
+        color: palette.edge,
+        roughness: 0.38,
+        metalness: 0.28,
+      }),
+    };
+    this.materialsByDenomination.set(key, materials);
+    return materials;
   }
 
   positionLabels() {
@@ -476,6 +644,12 @@ class TableScene3D {
     this.container.removeEventListener('pointercancel', this.onPointerUp);
     this.container.removeEventListener('wheel', this.onWheel);
     this.clearCards();
+    this.materialsByDenomination.forEach((materials) => {
+      materials.face.map?.dispose();
+      materials.face.dispose();
+      materials.edge.dispose();
+    });
+    this.materialsByDenomination.clear();
     this.renderer.dispose();
   }
 }
@@ -557,96 +731,140 @@ function playerStatus(player, hand) {
   return tags.join(' · ');
 }
 
-function createChipStack(coins) {
-  const group = new THREE.Group();
-  const amount = Math.max(0, Number(coins) || 0);
-  const stackCount = amount >= 1000 ? 3 : amount >= 200 ? 2 : 1;
-  const baseChips = Math.max(4, Math.min(10, Math.round(Math.log10(amount + 10) * 2.2)));
-  const colors = [
-    { face: 0xf2d46d, edge: 0x7d5b15, stripe: 0xfff3ae },
-    { face: 0x2fbf9c, edge: 0x0d5b4c, stripe: 0xbdf6e7 },
-    { face: 0xb84b55, edge: 0x63242c, stripe: 0xffc1c7 },
-  ];
+function createChipPlan(amount, config, maxVisibleChips) {
+  const total = Math.max(0, Math.floor(Number(amount) || 0));
+  const denominations = getChipDenominations(config);
+  if (!total || !denominations.length) return [];
 
-  for (let stack = 0; stack < stackCount; stack += 1) {
-    const chipsInStack = Math.max(2, baseChips - stack);
-    const stackOffset = (stack - (stackCount - 1) / 2) * 0.16;
-    for (let index = 0; index < chipsInStack; index += 1) {
-      const palette = colors[(stack + index) % colors.length];
-      const chip = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.085, 0.085, 0.024, 32),
-        new THREE.MeshStandardMaterial({
-          color: palette.face,
-          roughness: 0.34,
-          metalness: 0.28,
-        })
-      );
-      chip.position.set(stackOffset + Math.sin(index) * 0.006, index * 0.027, stack * 0.055 + Math.cos(index) * 0.004);
-      chip.castShadow = true;
-      chip.receiveShadow = true;
-      group.add(chip);
+  const counts = allocateChipCounts(total, denominations);
+  const plan = denominations.map((denomination, index) => ({
+    denomination,
+    count: counts[index] || 0,
+  }));
 
-      const edge = new THREE.Mesh(
-        new THREE.TorusGeometry(0.086, 0.006, 6, 32),
-        new THREE.MeshStandardMaterial({
-          color: palette.edge,
-          roughness: 0.28,
-          metalness: 0.32,
-        })
-      );
-      edge.position.copy(chip.position);
-      edge.position.y += 0.013;
-      edge.rotation.x = Math.PI / 2;
-      group.add(edge);
+  return capChipPlan(plan, maxVisibleChips);
+}
 
-      const innerRing = new THREE.Mesh(
-        new THREE.TorusGeometry(0.052, 0.004, 6, 28),
-        new THREE.MeshStandardMaterial({
-          color: palette.stripe,
-          roughness: 0.3,
-          metalness: 0.2,
-        })
-      );
-      innerRing.position.copy(edge.position);
-      innerRing.position.y += 0.001;
-      innerRing.rotation.x = Math.PI / 2;
-      group.add(innerRing);
+function allocateChipCounts(total, denominations) {
+  const counts = new Array(denominations.length).fill(0);
+  const groupValue = denominations.reduce((sum, denomination) => sum + denomination, 0);
+  const baseCount = Math.floor(total / groupValue);
+  let remaining = total - baseCount * groupValue;
 
-      for (let stripeIndex = 0; stripeIndex < 4; stripeIndex += 1) {
-        const stripe = new THREE.Mesh(
-          new THREE.BoxGeometry(0.028, 0.004, 0.008),
-          new THREE.MeshStandardMaterial({
-            color: palette.stripe,
-            roughness: 0.3,
-            metalness: 0.2,
-          })
-        );
-        const angle = (Math.PI / 2) * stripeIndex;
-        stripe.position.set(
-          chip.position.x + Math.cos(angle) * 0.073,
-          chip.position.y + 0.026,
-          chip.position.z + Math.sin(angle) * 0.073
-        );
-        stripe.rotation.y = -angle;
-        group.add(stripe);
-      }
-    }
+  if (baseCount > 0) counts.fill(baseCount);
+  distributeBalancedRemainder(counts, denominations, remaining);
+  return counts;
+}
+
+function distributeBalancedRemainder(counts, denominations, amount) {
+  let remaining = amount;
+  let iterations = 0;
+  const maxBalancedSteps = 2000;
+
+  while (remaining > 0 && iterations < maxBalancedSteps) {
+    const index = findLeastFilledDenominationIndex(counts, denominations, remaining);
+    if (index === -1) break;
+    counts[index] += 1;
+    remaining -= denominations[index];
+    iterations += 1;
   }
 
-  const highlight = new THREE.Mesh(
-    new THREE.CircleGeometry(0.19, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide,
-    })
-  );
-  highlight.rotation.x = -Math.PI / 2;
-  highlight.position.set(-0.05, 0.29, -0.03);
-  group.add(highlight);
+  if (remaining <= 0) return;
 
-  return group;
+  denominations.forEach((denomination, index) => {
+    if (remaining <= 0) return;
+    const extra = Math.floor(remaining / denomination);
+    if (!extra) return;
+    counts[index] += extra;
+    remaining -= extra * denomination;
+  });
+
+  if (remaining > 0) {
+    counts[counts.length - 1] += Math.ceil(remaining / denominations[denominations.length - 1]);
+  }
+}
+
+function findLeastFilledDenominationIndex(counts, denominations, amount) {
+  let selectedIndex = -1;
+  denominations.forEach((denomination, index) => {
+    if (denomination > amount) return;
+    if (selectedIndex === -1 || counts[index] < counts[selectedIndex]) selectedIndex = index;
+  });
+  return selectedIndex;
+}
+
+function capChipPlan(plan, maxVisibleChips) {
+  const limit = Math.max(1, Math.floor(Number(maxVisibleChips) || 1));
+  const totalVisible = plan.reduce((sum, entry) => sum + entry.count, 0);
+  if (totalVisible <= limit) return plan;
+
+  const capped = plan.map((entry) => ({
+    denomination: entry.denomination,
+    count: entry.count > 0 ? 1 : 0,
+    sourceCount: entry.count,
+  }));
+  let slotsLeft = Math.max(0, limit - capped.reduce((sum, entry) => sum + entry.count, 0));
+
+  while (slotsLeft > 0) {
+    let selected = null;
+    capped.forEach((entry) => {
+      if (entry.sourceCount <= entry.count) return;
+      if (!selected || entry.sourceCount - entry.count > selected.sourceCount - selected.count) selected = entry;
+    });
+    if (!selected) break;
+    selected.count += 1;
+    slotsLeft -= 1;
+  }
+
+  return capped.map(({ denomination, count }) => ({ denomination, count }));
+}
+
+function getChipDenominations(config = {}) {
+  const options = Array.isArray(config.betOptions) ? config.betOptions : [];
+  const normalized = options
+    .map((value) => Math.floor(Number(value)))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const defaults = normalized.length ? normalized : [5, 10, 20, 50];
+  return Array.from(new Set(defaults)).sort((a, b) => b - a).slice(0, 4);
+}
+
+function createChipFaceTexture(denomination, palette) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const face = `#${palette.face.toString(16).padStart(6, '0')}`;
+  const edge = `#${palette.edge.toString(16).padStart(6, '0')}`;
+  ctx.fillStyle = face;
+  ctx.beginPath();
+  ctx.arc(64, 64, 62, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = edge;
+  ctx.stroke();
+  ctx.setLineDash([12, 10]);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.beginPath();
+  ctx.arc(64, 64, 48, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = palette.ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 30px Georgia';
+  ctx.fillText(formatCompactAmount(denomination), 64, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function formatCompactAmount(value) {
+  const amount = Math.floor(Number(value) || 0);
+  if (amount >= 100000000) return `${Math.round(amount / 10000000) / 10}亿`;
+  if (amount >= 10000) return `${Math.round(amount / 1000) / 10}万`;
+  return amount.toLocaleString('zh-CN');
 }
 
 function clamp(value, min, max) {

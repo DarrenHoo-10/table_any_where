@@ -12,6 +12,9 @@ const CARD_SIZE = { width: 0.42, height: 0.62 };
 const CARD_THICKNESS = 0.012;
 const TABLE_RADIUS = 3.05;
 const LABEL_RADIUS = 4.15;
+const DEFAULT_CAMERA_PITCH = 0.62;
+const DEFAULT_CAMERA_DISTANCE = 8.9;
+const DEFAULT_CAMERA_TARGET_Y = 0.04;
 const PLAYER_CHIP_LIMIT = 50;
 const POT_CHIP_LIMIT = 50;
 const CHIP_HEIGHT = 0.026;
@@ -46,8 +49,8 @@ class TableScene3D {
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.yaw = -0.42;
-    this.pitch = 0.88;
-    this.distance = 7.9;
+    this.pitch = DEFAULT_CAMERA_PITCH;
+    this.distance = DEFAULT_CAMERA_DISTANCE;
     this.cameraSeatKey = '';
     this.lastHandId = '';
     this.lastSettlementAt = 0;
@@ -64,7 +67,7 @@ class TableScene3D {
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 80);
-    this.rayTarget = new THREE.Vector3(0, 0.2, 0);
+    this.rayTarget = new THREE.Vector3(0, DEFAULT_CAMERA_TARGET_Y, 0);
 
     container.innerHTML = '';
     container.appendChild(this.renderer.domElement);
@@ -428,7 +431,7 @@ class TableScene3D {
     const frontTexture = createCardTexture(card, isBack);
     const backTexture = createCardTexture(null, true);
     const edgeMaterial = new THREE.MeshStandardMaterial({
-      color: isBack ? 0xdceee8 : 0xd8d0c2,
+      color: isBack ? 0x123742 : 0xfff9eb,
       roughness: 0.72,
       metalness: 0.02,
     });
@@ -681,17 +684,11 @@ function drawCard(ctx, width, height, card, isBack) {
   roundRect(ctx, 10, 10, width - 20, height - 20, 28);
   ctx.fillStyle = isBack ? '#123742' : '#fff9eb';
   ctx.fill();
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = isBack ? 'rgba(255, 255, 255, 0.72)' : 'rgba(32, 28, 21, 0.22)';
-  ctx.stroke();
 
   if (isBack) {
     ctx.fillStyle = '#0b252d';
     roundRect(ctx, 34, 34, width - 68, height - 68, 20);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.34)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
     ctx.fillStyle = 'rgba(255, 248, 226, 0.9)';
     ctx.font = '900 42px Georgia';
     ctx.textAlign = 'center';

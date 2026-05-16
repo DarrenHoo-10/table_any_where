@@ -31,14 +31,29 @@ test('playing cards avoid gold border styling', () => {
   assert.equal(cardBlocks.includes('rgba(181, 138, 47'), false);
   assert.equal(cardBlocks.includes('rgba(245, 215, 125'), false);
   assert.equal(cardBlocks.includes('var(--gold)'), false);
+  assert.equal(cardBlocks.includes('border: 1px'), false);
+  assert.equal(cardBlocks.includes('border-color'), false);
 
   const drawCardBlock = getFunctionBlock(tableScene, 'drawCard');
   const createCardMeshBlock = getMethodBlock(tableScene, 'createCardMesh');
   assert.equal(drawCardBlock.includes('#f5d77d'), false);
   assert.equal(drawCardBlock.includes('#d1a954'), false);
   assert.equal(drawCardBlock.includes('rgba(245, 215, 125'), false);
+  assert.equal(drawCardBlock.includes('ctx.stroke'), false);
   assert.equal(createCardMeshBlock.includes('0xf5d77d'), false);
   assert.equal(createCardMeshBlock.includes('0xd1a954'), false);
+  assert.equal(createCardMeshBlock.includes('0xd8d0c2'), false);
+});
+
+test('3d table starts from a lower pulled-back camera angle', () => {
+  const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
+
+  assert.match(tableScene, /const DEFAULT_CAMERA_PITCH = 0\.62;/);
+  assert.match(tableScene, /const DEFAULT_CAMERA_DISTANCE = 8\.9;/);
+  assert.match(tableScene, /const DEFAULT_CAMERA_TARGET_Y = 0\.04;/);
+  assert.match(tableScene, /this\.pitch = DEFAULT_CAMERA_PITCH;/);
+  assert.match(tableScene, /this\.distance = DEFAULT_CAMERA_DISTANCE;/);
+  assert.match(tableScene, /new THREE\.Vector3\(0, DEFAULT_CAMERA_TARGET_Y, 0\)/);
 });
 
 function getCssBlock(css, selector) {

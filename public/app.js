@@ -7,7 +7,7 @@ const DEFAULT_ROOM_CONFIG = {
 };
 
 const MODE_LABELS = {
-  zha_jing_hua: '炸金花',
+  zha_jing_hua: 'Straight Flush Web Game',
   tractor: '拖拉机',
 };
 
@@ -395,9 +395,11 @@ function renderActions() {
     const targetPlayerId = findPeekTarget();
     if (targetPlayerId) send('action', { type: 'peek_player', targetPlayerId });
   }, 'secondary', peekUsedIds.includes(state.playerId) || !findPeekTarget() || !enabledBetOptions.length));
+  const defaultBet = enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0];
   els.actions.appendChild(actionButton('开牌', () => {
-    send('action', { type: 'showdown', amount: enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0] });
+    send('action', { type: 'showdown' });
   }, 'primary', !hand.canShowdown || !enabledBetOptions.length));
+  els.actions.lastChild.textContent = `开牌 ${defaultBet}`;
 }
 
 function renderSettlement() {
@@ -410,6 +412,34 @@ function renderSettlement() {
   }).join('、');
   els.settlementPanel.querySelector('[data-settlement-title]').textContent = `本手赢家：${winnerNames || '-'}`;
   els.settlementPanel.querySelector('[data-settlement-detail]').textContent = `奖池 ${formatCoins(settlement.pot || 0)} · ${settlement.hadNegative ? '已触发补币' : '金币正常'}`;
+  renderSettlementReveals(settlement);
+}
+
+function renderSettlementReveals(settlement) {
+  const previous = els.settlementPanel.querySelector('.settlement-reveals');
+  if (previous) previous.remove();
+
+  const revealIds = settlement.revealedPlayerIds || [];
+  if (!revealIds.length || !settlement.hands) return;
+
+  const list = document.createElement('div');
+  list.className = 'settlement-reveals';
+  revealIds.forEach((playerId) => {
+    const hand = settlement.hands[playerId];
+    if (!hand || !Array.isArray(hand.cards)) return;
+    const player = findPlayer(playerId);
+    const item = document.createElement('article');
+    const title = document.createElement('p');
+    title.textContent = `${player ? player.nickname : '玩家'} · ${hand.label || '牌面'}`;
+    const row = document.createElement('div');
+    row.className = 'card-row is-small';
+    item.appendChild(title);
+    item.appendChild(row);
+    renderCards(row, hand.cards);
+    list.appendChild(item);
+  });
+
+  if (list.children.length) els.settlementPanel.appendChild(list);
 }
 
 function renderFinal() {

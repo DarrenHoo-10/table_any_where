@@ -57,13 +57,17 @@ test('normalizes room defaults conservatively', () => {
   assert.equal(normalizeConfig({ peekCost: 0 }).peekCost, 0);
 });
 
-test('room flow charges mirror-card cost from current call and only mirrors viewed players', () => {
+test('mirror-card compares hands, eliminates one player, and reveals cards to both players', () => {
   const manager = new RoomManager();
-  const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 2 });
+  const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 3 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: '后手' });
 
   manager.startHand(room.id, host.id);
-  assert.equal(room.hand.pot, 10);
+  room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
+  room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
+  room.hand.hands[tail.id] = [C('K'), C('K', 'H'), C('K', 'D')];
+  assert.equal(room.hand.pot, 15);
   assert.throws(
     () => manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id }),
     /已经看过自己的牌/
@@ -71,13 +75,15 @@ test('room flow charges mirror-card cost from current call and only mirrors view
   manager.handleAction(room.id, guest.id, { type: 'view_self' });
 
   const before = host.coins;
-  manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id });
+  const result = manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id });
   assert.equal(before - host.coins, 5);
-  assert.equal(room.hand.pot, 15);
-  assert.throws(
-    () => manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id }),
-    /已经照牌/
-  );
+  assert.equal(room.hand.pot, 20);
+  assert.deepEqual(result.privateMessages.map((item) => item.privateTo).sort(), [guest.id, host.id].sort());
+  assert.deepEqual(result.privateMessages.find((item) => item.privateTo === host.id).peekTargetPlayerId, guest.id);
+  assert.deepEqual(result.privateMessages.find((item) => item.privateTo === guest.id).peekTargetPlayerId, host.id);
+  assert.equal(room.hand.activePlayerIds.includes(guest.id), false);
+  assert.equal(room.hand.foldedPlayerIds.includes(guest.id), true);
+  assert.equal(room.hand.currentTurnPlayerId, tail.id);
 });
 
 test('bet options enforce open and blind relative call levels', () => {
@@ -160,6 +166,30 @@ test('blind players cannot choose a level above the highest callable open level'
   const before = host.coins;
   manager.handleAction(room.id, host.id, { type: 'bet', amount: 20 });
   assert.equal(before - host.coins, 20);
+});
+
+test('showdown defaults to current legal bet and reveals both contenders', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom(
+    { nickname: 'A' },
+    { maxPlayers: 2, bonus: 0, betOptions: [5, 10, 20, 50] }
+  );
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  manager.startHand(room.id, host.id);
+  room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
+  room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
+  manager.handleAction(room.id, host.id, { type: 'view_self' });
+  manager.handleAction(room.id, host.id, { type: 'bet', amount: 50 });
+
+  const guestBefore = guest.coins;
+  manager.handleAction(room.id, guest.id, { type: 'showdown' });
+
+  assert.equal(guestBefore - guest.coins, 20);
+  assert.equal(room.status, 'between_hands');
+  assert.deepEqual(room.lastSettlement.revealedPlayerIds.sort(), [guest.id, host.id].sort());
+  assert.equal(room.lastSettlement.hands[host.id].cards.length, 3);
+  assert.equal(room.lastSettlement.hands[guest.id].cards.length, 3);
 });
 
 test('serialized hand only reveals viewed cards and copies mutable arrays', () => {

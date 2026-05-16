@@ -4,6 +4,7 @@ const {
   MAX_COINS,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  compareHands,
   dealHands,
   evaluateHand,
   findWinningPlayerIds,
@@ -248,30 +249,54 @@ class RoomManager {
     player.coins -= cost;
     hand.pot += cost;
     hand.peekUsedPlayerIds.push(playerId);
-    hand.actionLog.push({ type: 'peek_player', playerId, targetPlayerId, cost, at: Date.now() });
+    const compareResult = compareHands(hand.hands[playerId], hand.hands[targetPlayerId], room.config.mode);
+    const winnerId = compareResult > 0 ? playerId : targetPlayerId;
+    const loserId = winnerId === playerId ? targetPlayerId : playerId;
+    const privateMessages = [
+      {
+        privateTo: playerId,
+        privateCards: hand.hands[targetPlayerId].map(publicCard),
+        peekTargetPlayerId: targetPlayerId,
+      },
+      {
+        privateTo: targetPlayerId,
+        privateCards: hand.hands[playerId].map(publicCard),
+        peekTargetPlayerId: playerId,
+      },
+    ];
+
+    hand.foldedPlayerIds.push(loserId);
+    hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== loserId);
+    hand.actionLog.push({ type: 'peek_player', playerId, targetPlayerId, winnerId, loserId, cost, at: Date.now() });
+
+    if (hand.activePlayerIds.length === 1) {
+      this.settleHand(room, 'mirror_card', [playerId, targetPlayerId]);
+    } else {
+      this.advanceTurn(room);
+    }
 
     return {
       room,
-      privateTo: playerId,
-      privateCards: hand.hands[targetPlayerId].map(publicCard),
-      peekTargetPlayerId: targetPlayerId,
+      privateMessages,
     };
   }
 
   showdown(room, playerId, amount) {
     const hand = room.hand;
     if (hand.activePlayerIds.length !== 2) throw new Error('只剩两名玩家时才能开牌。');
-    const normalizedAmount = this.requireLegalBet(room, playerId, amount);
+    const normalizedAmount = amount === undefined || amount === null || amount === ''
+      ? this.getCurrentBetCost(room, playerId)
+      : this.requireLegalBet(room, playerId, amount);
     const cost = this.getActionCost(room, playerId, normalizedAmount);
     const player = this.requirePlayer(room, playerId);
     player.coins -= cost;
     hand.pot += cost;
     hand.actionLog.push({ type: 'showdown', playerId, amount: normalizedAmount, cost, at: Date.now() });
-    this.settleHand(room, 'showdown');
-    return { room };
+    this.settleHand(room, 'showdown', hand.activePlayerIds.slice());
+    return { room, amount: normalizedAmount };
   }
 
-  settleHand(room, reason) {
+  settleHand(room, reason, revealedPlayerIds = []) {
     const hand = room.hand;
     const contenderIds = hand.activePlayerIds.slice();
     const winnerIds = contenderIds.length === 1
@@ -319,6 +344,7 @@ class RoomManager {
       reason,
       pot: hand.pot,
       winnerIds,
+      revealedPlayerIds: revealedPlayerIds.slice(),
       beforeCoins,
       afterCoins: Object.fromEntries(room.players.map((player) => [player.id, player.coins])),
       bonusTransfers,

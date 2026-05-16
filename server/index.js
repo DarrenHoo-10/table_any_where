@@ -114,8 +114,16 @@ function handleMessage(socket, message) {
       playerId: socket.playerId,
       action: payload.type,
       targetPlayerId: payload.targetPlayerId,
-      amount: payload.amount,
+      amount: result.amount ?? payload.amount,
     });
+    if (Array.isArray(result.privateMessages)) {
+      result.privateMessages.forEach((message) => {
+        sendToPlayer(message.privateTo, 'private_cards', {
+          cards: message.privateCards,
+          targetPlayerId: message.peekTargetPlayerId || message.privateTo,
+        });
+      });
+    }
     if (result.privateTo) {
       sendToPlayer(result.privateTo, 'private_cards', {
         cards: result.privateCards,

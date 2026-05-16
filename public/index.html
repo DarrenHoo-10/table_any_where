@@ -104,16 +104,20 @@
           </div>
           <div class="room-actions">
             <button id="copyRoomBtn" class="ghost-btn" type="button">复制</button>
+            <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
             <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
           </div>
         </section>
 
-        <section id="roomAvatarPanel" class="room-avatar-panel">
-          <div class="panel-title">
-            <h3>选择头像</h3>
-            <span data-avatar-help>同一房间头像不能重复</span>
+        <section id="avatarModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card" role="dialog" aria-modal="true" aria-labelledby="avatarModalTitle">
+            <div class="panel-title">
+              <h3 id="avatarModalTitle">选择头像</h3>
+              <span data-avatar-help>同一房间头像不能重复</span>
+            </div>
+            <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
+            <button id="closeAvatarModalBtn" class="ghost-btn wide-btn" type="button">稍后再选</button>
           </div>
-          <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
         </section>
 
         <section class="felt-table">

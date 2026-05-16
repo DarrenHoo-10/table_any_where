@@ -50,6 +50,7 @@ const state = {
   status: '未连接',
   peekedCards: null,
   leavingRoom: false,
+  avatarModalOpen: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -69,7 +70,9 @@ const els = {};
   'finalView',
   'roomCodeText',
   'copyRoomBtn',
-  'roomAvatarPanel',
+  'openAvatarBtn',
+  'avatarModal',
+  'closeAvatarModalBtn',
   'playerList',
   'startHandBtn',
   'leaveRoomBtn',
@@ -114,9 +117,7 @@ function bindEvents() {
   els.avatarPicker.addEventListener('click', (event) => {
     const button = event.target.closest('[data-avatar]');
     if (!button || button.disabled) return;
-    state.avatarUrl = button.dataset.avatar;
-    localStorage.setItem('avatarUrl', state.avatarUrl);
-    if (state.room) send('select_avatar', { avatarUrl: state.avatarUrl });
+    if (state.room) send('select_avatar', { avatarUrl: button.dataset.avatar });
   });
 
   els.createRoomBtn.addEventListener('click', () => {
@@ -150,6 +151,20 @@ function bindEvents() {
     }
   });
 
+  els.openAvatarBtn.addEventListener('click', () => {
+    state.avatarModalOpen = true;
+    render();
+  });
+  els.closeAvatarModalBtn.addEventListener('click', () => {
+    if (!currentPlayerHasAvatar()) {
+      toast('请先选择头像');
+      state.avatarModalOpen = true;
+      render();
+      return;
+    }
+    state.avatarModalOpen = false;
+    render();
+  });
   els.startHandBtn.addEventListener('click', () => send('start_hand'));
   els.continueHandBtn.addEventListener('click', () => send('start_hand'));
   els.finishGameBtn.addEventListener('click', () => send('finish_game'));
@@ -218,6 +233,7 @@ function handleMessage(message) {
     state.room = normalizeRoom(payload);
     state.roomId = state.room.id;
     syncSelectedAvatar();
+    syncAvatarModalState();
     if (!state.room.hand) state.peekedCards = null;
     if (state.room.finalSettlement) state.status = '游戏已结算';
   }
@@ -281,6 +297,7 @@ function render() {
   if (!state.room) return;
   renderRoom();
   renderAvatarPicker();
+  renderAvatarModal();
   renderPlayers();
   renderHand();
   renderSettlement();
@@ -614,6 +631,22 @@ function renderAvatarPicker() {
   });
 }
 
+function renderAvatarModal() {
+  if (!els.avatarModal || !state.room) return;
+  const mustChooseAvatar = !currentPlayerHasAvatar();
+  const open = mustChooseAvatar || state.avatarModalOpen;
+  els.avatarModal.hidden = !open;
+  els.avatarModal.classList.toggle('is-required', mustChooseAvatar);
+  els.closeAvatarModalBtn.hidden = mustChooseAvatar;
+  els.openAvatarBtn.textContent = currentPlayerHasAvatar() ? '更换头像' : '选择头像';
+  els.openAvatarBtn.disabled = state.room.status !== 'lobby';
+}
+
+function syncAvatarModalState() {
+  if (!state.room || !state.playerId) return;
+  state.avatarModalOpen = !currentPlayerHasAvatar();
+}
+
 function syncSelectedAvatar() {
   if (!state.room || !state.playerId) return;
   const player = getCurrentPlayer();
@@ -622,6 +655,10 @@ function syncSelectedAvatar() {
   if (assignedAvatar === state.avatarUrl) return;
   state.avatarUrl = assignedAvatar;
   if (state.avatarUrl) localStorage.setItem('avatarUrl', state.avatarUrl);
+}
+
+function currentPlayerHasAvatar() {
+  return Boolean(normalizeAvatarKey(getCurrentPlayer()?.avatarUrl));
 }
 
 function normalizeAvatarKey(value) {

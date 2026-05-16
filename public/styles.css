@@ -1249,6 +1249,30 @@ select:focus {
   filter: none;
 }
 
+.turn-countdown {
+  min-width: 52px;
+  border: 1px solid rgba(245, 215, 125, 0.5);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--gold);
+  background: rgba(0, 0, 0, 0.24);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-countdown[hidden] {
+  display: none;
+}
+
+.turn-countdown.is-warning {
+  border-color: rgba(228, 91, 91, 0.82);
+  color: #fff8e6;
+  background: rgba(180, 72, 72, 0.72);
+  box-shadow: 0 0 0 3px rgba(228, 91, 91, 0.16);
+}
+
 .avatar-placeholder {
   display: grid;
   width: 46px;

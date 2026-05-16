@@ -111,9 +111,18 @@ test('turn clock updates timer text without rebuilding the 3d scene', () => {
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
   const renderHandBlock = getFunctionBlock(appJs, 'renderHand');
   const renderTurnClockBlock = getFunctionBlock(appJs, 'renderTurnClock');
+  const warnTurnCountdownBlock = getFunctionBlock(appJs, 'warnTurnCountdown');
 
   assert.match(renderHandBlock, /renderCurrentTurnText\(hand\);/);
-  assert.match(renderTurnClockBlock, /renderCurrentTurnText\(safeHand\(\)\);/);
+  assert.match(renderTurnClockBlock, /const hand = safeHand\(\);/);
+  assert.match(renderTurnClockBlock, /renderCurrentTurnText\(hand\);/);
+  assert.match(renderTurnClockBlock, /updatePlayerTurnCountdown\(hand\);/);
+  assert.match(renderTurnClockBlock, /warnTurnCountdown\(hand\);/);
+  assert.match(warnTurnCountdownBlock, /turnDeadlineAt\}:\$\{remainingSeconds\}/);
+  assert.match(warnTurnCountdownBlock, /playTurnWarningSound\(\);/);
+  assert.equal(warnTurnCountdownBlock.includes('toast('), false);
+  assert.match(appJs, /function playTurnWarningSound\(\)/);
+  assert.match(appJs, /for \(let index = 0; index < 3; index \+= 1\)/);
   assert.equal(renderTurnClockBlock.includes('renderHand('), false);
   assert.equal(renderTurnClockBlock.includes('renderTableScene3d'), false);
 });
@@ -170,9 +179,12 @@ test('peek action uses target and result modals with auto-close notification', (
   assert.match(renderActionsBlock, /actionButton\('照牌'/);
   assert.equal(renderActionsBlock.includes('`照 ${target ? target.nickname'), false);
   assert.match(renderActionsBlock, /看牌后才可以照牌/);
+  assert.match(renderActionsBlock, /activeIds\.length > 2/);
   assert.match(handleMessageBlock, /state\.peekResultModalOpen = true;/);
   assert.match(appJs, /function renderPeekTargetModal\(\)/);
   assert.match(appJs, /function renderPeekResultModal\(\)/);
+  assert.match(appJs, /function findPeekResultPlayer\(result, playerId\)/);
+  assert.match(appJs, /if \(activeIds\.length <= 2\) return \[\];/);
   assert.match(appJs, /setTimeout\(\(\) => \{/);
   assert.match(appJs, /}, 5000\);/);
 });

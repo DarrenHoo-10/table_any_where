@@ -242,6 +242,9 @@ test('mirror-card requires consent, compares hands, and reveals the result to bo
   assert.deepEqual(result.privateMessages.map((item) => item.privateTo).sort(), [guest.id, host.id].sort());
   assert.deepEqual(result.privateMessages.find((item) => item.privateTo === host.id).peekTargetPlayerId, guest.id);
   assert.deepEqual(result.privateMessages.find((item) => item.privateTo === guest.id).peekTargetPlayerId, host.id);
+  assert.deepEqual(result.privateMessages.find((item) => item.privateTo === guest.id).peekResultTargetPlayerId, guest.id);
+  assert.equal(result.privateMessages.find((item) => item.privateTo === guest.id).participants[host.id].nickname, '房主');
+  assert.equal(result.privateMessages.find((item) => item.privateTo === guest.id).participants[guest.id].nickname, '客人');
   assert.equal(result.privateMessages.every((item) => item.winnerId === host.id && item.loserId === guest.id), true);
   assert.deepEqual(result.privateMessages.find((item) => item.privateTo === host.id).participantHands[host.id], [
     { suit: 'S', rank: 'A', value: 14 },
@@ -260,8 +263,9 @@ test('mirror-card requires consent, compares hands, and reveals the result to bo
 
 test('mirror-card refusal clears the request without charging or consuming the peek', () => {
   const manager = new RoomManager();
-  const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 2 });
+  const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 3 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
+  manager.joinRoom(room.id, { nickname: '后手' });
 
   startReadyHand(manager, room, host.id);
   manager.handleAction(room.id, host.id, { type: 'view_self' });
@@ -273,10 +277,25 @@ test('mirror-card refusal clears the request without charging or consuming the p
 
   assert.equal(result.accepted, false);
   assert.equal(host.coins, before);
-  assert.equal(room.hand.pot, 10);
+  assert.equal(room.hand.pot, 15);
   assert.equal(room.hand.pendingPeekRequest, null);
   assert.deepEqual(room.hand.peekUsedPlayerIds, []);
   assert.equal(room.hand.currentTurnPlayerId, host.id);
+});
+
+test('mirror-card is not available when only two players remain', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  startReadyHand(manager, room, host.id);
+  manager.handleAction(room.id, host.id, { type: 'view_self' });
+  manager.handleAction(room.id, guest.id, { type: 'view_self' });
+
+  assert.throws(
+    () => manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id }),
+    /只剩两名玩家时请直接开牌/
+  );
 });
 
 test('bet options enforce open and blind relative call levels', () => {

@@ -28,6 +28,21 @@ const MODE_LABELS = {
   tractor: 'Straight',
 };
 
+const MODE_RULES = {
+  zha_jing_hua: {
+    title: 'Flush 模式',
+    short: '同花比顺子大，豹子仍是最大牌型。',
+    summary: 'Flush 模式更看重同花牌型：同花高于顺子，适合偏传统炸金花的节奏。',
+    ranking: '牌型从小到大：普通牌、对子、顺子、同花、同花顺、豹子。',
+  },
+  tractor: {
+    title: 'Straight 模式',
+    short: '顺子为核心大牌，顺子高于同花和同花顺。',
+    summary: 'Straight 模式更看重连续牌：顺子压过同花和同花顺，牌局判断会更偏向顺子价值。',
+    ranking: '牌型从小到大：普通牌、对子、同花、同花顺、顺子、豹子。',
+  },
+};
+
 const SUITS = {
   S: '♠',
   H: '♥',
@@ -87,6 +102,9 @@ const els = {};
   'rankingList',
   'backHomeBtn',
   'modeSelect',
+  'modeHelpBtn',
+  'modeRulesPreview',
+  'roomRulesBrief',
   'maxPlayersInput',
   'initialCoinsInput',
   'baseBetInput',
@@ -112,6 +130,18 @@ function bindEvents() {
   els.nicknameInput.addEventListener('input', () => {
     state.nickname = els.nicknameInput.value.trim().slice(0, 16) || randomNickname();
     localStorage.setItem('nickname', state.nickname);
+  });
+
+  els.modeSelect.addEventListener('change', () => {
+    renderModeRulePreview();
+    highlightLobbyModeCard(els.modeSelect.value);
+  });
+
+  els.modeHelpBtn.addEventListener('click', () => {
+    const expanded = els.modeRulesPreview.hidden;
+    els.modeRulesPreview.hidden = !expanded;
+    els.modeHelpBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    highlightLobbyModeCard(els.modeSelect.value);
   });
 
   els.avatarPicker.addEventListener('click', (event) => {
@@ -293,9 +323,11 @@ function send(type, payload = {}) {
 
 function render() {
   renderStatus();
+  renderModeRulePreview();
   renderViews();
   if (!state.room) return;
   renderRoom();
+  renderRoomRules();
   renderAvatarPicker();
   renderAvatarModal();
   renderPlayers();
@@ -326,6 +358,50 @@ function renderRoom() {
   const summary = `${MODE_LABELS[config.mode] || config.mode} · 初始 ${formatCoins(config.initialCoins || DEFAULT_ROOM_CONFIG.initialCoins)} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
+}
+
+function renderModeRulePreview() {
+  if (!els.modeSelect || !els.modeRulesPreview) return;
+  const rules = getModeRules(els.modeSelect.value);
+  const title = els.modeRulesPreview.querySelector('[data-mode-rule-title]');
+  const copy = els.modeRulesPreview.querySelector('[data-mode-rule-copy]');
+  if (title) title.textContent = rules.title;
+  if (copy) copy.textContent = `${rules.short} ${rules.ranking}`;
+}
+
+function highlightLobbyModeCard(mode) {
+  document.querySelectorAll('[data-mode-card]').forEach((card) => {
+    card.classList.toggle('is-active', card.dataset.modeCard === mode);
+  });
+}
+
+function renderRoomRules() {
+  if (!els.roomRulesBrief || !state.room) return;
+  const config = state.room.config || DEFAULT_ROOM_CONFIG;
+  const rules = getModeRules(config.mode);
+  const title = els.roomRulesBrief.querySelector('[data-room-rule-title]');
+  const summary = els.roomRulesBrief.querySelector('[data-room-rule-summary]');
+  const points = els.roomRulesBrief.querySelector('[data-room-rule-points]');
+  const timeoutMinutes = Math.round((config.actionTimeoutSeconds || DEFAULT_ROOM_CONFIG.actionTimeoutSeconds) / 60);
+  const betOptions = (Array.isArray(config.betOptions) && config.betOptions.length ? config.betOptions : DEFAULT_ROOM_CONFIG.betOptions).join('/');
+  const pointTexts = [
+    rules.ranking,
+    `每手开始所有玩家先扣底注 ${formatCoins(config.baseBet)}，奖池由下注、照牌、开牌费用累积。`,
+    `看牌后仍可下注；照牌每手一次，只能照已经看过自己牌且未弃牌的玩家，输家直接出局。`,
+    `只剩两名玩家时可以开牌；豹子触发喜钱 ${formatCoins(config.bonus)}，金币为负时自动补回初始金额。`,
+    `本房间下注档为 ${betOptions}，行动时间为 ${timeoutMinutes} 分钟。`,
+  ];
+
+  if (title) title.textContent = rules.title;
+  if (summary) summary.textContent = rules.summary;
+  if (points) {
+    points.innerHTML = '';
+    pointTexts.forEach((text) => {
+      const item = document.createElement('li');
+      item.textContent = text;
+      points.appendChild(item);
+    });
+  }
 }
 
 function renderPlayers() {
@@ -797,4 +873,8 @@ function escapeHtml(value) {
 function toast(message) {
   state.status = message;
   renderStatus();
+}
+
+function getModeRules(mode) {
+  return MODE_RULES[mode] || MODE_RULES.zha_jing_hua;
 }

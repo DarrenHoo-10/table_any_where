@@ -28,6 +28,16 @@
           <div class="table-chip">纯内存房间 · 结束即清空 · 手机浏览器可玩</div>
           <h1 id="lobbyTitle">开一桌干净利落的三张牌。</h1>
           <p>房主配置玩法和底注，朋友输入房间号加入。所有结算只保留在本局房间里。</p>
+          <div id="lobbyRules" class="lobby-rules" aria-label="模式规则说明">
+            <article data-mode-card="zha_jing_hua">
+              <strong>Flush 模式</strong>
+              <span>同花比顺子大。牌型从小到大：普通牌、对子、顺子、同花、同花顺、豹子。</span>
+            </article>
+            <article data-mode-card="tractor">
+              <strong>Straight 模式</strong>
+              <span>顺子为核心大牌，顺子大于同花和同花顺。牌型从小到大：普通牌、对子、同花、同花顺、顺子、豹子。</span>
+            </article>
+          </div>
         </div>
 
         <section class="control-panel" aria-label="创建或加入房间">
@@ -43,7 +53,10 @@
 
           <div class="mode-grid">
             <div class="field-group">
-              <label for="modeSelect">模式</label>
+              <div class="field-label-row">
+                <label for="modeSelect">模式</label>
+                <button id="modeHelpBtn" class="mode-help-btn" type="button" aria-label="查看当前模式规则" aria-controls="modeRulesPreview" aria-expanded="false" title="查看当前模式规则">!</button>
+              </div>
               <select id="modeSelect">
                 <option value="zha_jing_hua">Flush</option>
                 <option value="tractor">Straight</option>
@@ -53,6 +66,11 @@
               <label for="maxPlayersInput">人数</label>
               <input id="maxPlayersInput" type="number" min="2" max="12" step="1">
             </div>
+          </div>
+
+          <div id="modeRulesPreview" class="mode-rules-preview" hidden>
+            <strong data-mode-rule-title>Flush 模式</strong>
+            <p data-mode-rule-copy>同花比顺子大。</p>
           </div>
 
           <div class="settings-grid">
@@ -171,6 +189,19 @@
           </div>
           <ul id="playerList" class="player-list"></ul>
         </aside>
+
+        <section class="room-rules-panel" aria-label="游戏规则简介">
+          <details id="roomRulesBrief">
+            <summary>
+              <span>游戏规则</span>
+              <strong data-room-rule-title>Flush 模式</strong>
+            </summary>
+            <div class="room-rules-content">
+              <p data-room-rule-summary>等待同步房间规则。</p>
+              <ul data-room-rule-points></ul>
+            </div>
+          </details>
+        </section>
       </section>
 
       <section id="finalView" class="view final-view" hidden>

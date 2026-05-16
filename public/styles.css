@@ -59,6 +59,7 @@ button:disabled {
 .felt-table,
 .actions-panel,
 .players-panel,
+.room-rules-panel,
 .final-card {
   border: 1px solid var(--line);
   background: var(--panel);
@@ -107,7 +108,8 @@ button:disabled {
 .panel-title span,
 .player-card span,
 .status-text,
-.room-meta {
+.room-meta,
+.lobby-rules span {
   color: var(--muted);
 }
 
@@ -191,11 +193,41 @@ h1 {
   line-height: 1.7;
 }
 
+.lobby-rules {
+  display: grid;
+  gap: 12px;
+  max-width: 620px;
+  margin-top: 34px;
+}
+
+.lobby-rules article {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(245, 215, 125, 0.24);
+  padding-top: 12px;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.lobby-rules article.is-active {
+  border-color: rgba(245, 215, 125, 0.82);
+}
+
+.lobby-rules strong {
+  color: var(--gold);
+  font-size: 15px;
+}
+
+.lobby-rules span {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .control-panel,
 .room-panel,
 .felt-table,
 .actions-panel,
 .players-panel,
+.room-rules-panel,
 .final-card {
   border-radius: 22px;
   padding: 18px;
@@ -205,6 +237,58 @@ h1 {
   display: grid;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mode-help-btn {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(245, 215, 125, 0.52);
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(245, 215, 125, 0.1);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.mode-help-btn:hover,
+.mode-help-btn[aria-expanded="true"] {
+  color: #14221d;
+  background: var(--gold);
+}
+
+.mode-rules-preview {
+  margin: -2px 0 14px;
+  border-left: 3px solid var(--gold);
+  padding: 10px 12px;
+  background: rgba(245, 215, 125, 0.08);
+}
+
+.mode-rules-preview strong,
+.mode-rules-preview p {
+  display: block;
+}
+
+.mode-rules-preview strong {
+  margin-bottom: 4px;
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.mode-rules-preview p {
+  margin: 0;
+  color: #deece7;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .form-section-title {
@@ -417,7 +501,8 @@ select:focus {
 
 .room-panel,
 .felt-table,
-.actions-panel {
+.actions-panel,
+.room-rules-panel {
   grid-column: 1;
 }
 
@@ -598,6 +683,79 @@ select:focus {
   flex: 1;
 }
 
+.room-rules-panel {
+  grid-column: 1 / -1;
+  padding: 0;
+  overflow: hidden;
+}
+
+.room-rules-panel details {
+  padding: 16px 18px;
+}
+
+.room-rules-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.room-rules-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.room-rules-panel summary::after {
+  content: "+";
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(245, 215, 125, 0.34);
+  border-radius: 50%;
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.room-rules-panel details[open] summary::after {
+  content: "-";
+}
+
+.room-rules-panel summary span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.room-rules-panel summary strong {
+  margin-left: auto;
+  color: var(--gold);
+  font-size: 15px;
+}
+
+.room-rules-content {
+  margin-top: 14px;
+  border-top: 1px solid rgba(245, 215, 125, 0.18);
+  padding-top: 14px;
+}
+
+.room-rules-content p {
+  margin-bottom: 10px;
+  color: #deece7;
+  line-height: 1.65;
+}
+
+.room-rules-content ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .player-list,
 .ranking-list {
   display: grid;
@@ -710,7 +868,8 @@ select:focus {
   .players-panel,
   .room-panel,
   .felt-table,
-  .actions-panel {
+  .actions-panel,
+  .room-rules-panel {
     grid-column: 1;
     grid-row: auto;
   }

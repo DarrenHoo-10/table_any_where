@@ -428,7 +428,7 @@ class TableScene3D {
     const frontTexture = createCardTexture(card, isBack);
     const backTexture = createCardTexture(null, true);
     const edgeMaterial = new THREE.MeshStandardMaterial({
-      color: isBack ? 0xf5d77d : 0xd1a954,
+      color: isBack ? 0xdceee8 : 0xd8d0c2,
       roughness: 0.72,
       metalness: 0.02,
     });
@@ -682,17 +682,17 @@ function drawCard(ctx, width, height, card, isBack) {
   ctx.fillStyle = isBack ? '#123742' : '#fff9eb';
   ctx.fill();
   ctx.lineWidth = 8;
-  ctx.strokeStyle = isBack ? '#f5d77d' : '#d1a954';
+  ctx.strokeStyle = isBack ? 'rgba(255, 255, 255, 0.72)' : 'rgba(32, 28, 21, 0.22)';
   ctx.stroke();
 
   if (isBack) {
     ctx.fillStyle = '#0b252d';
     roundRect(ctx, 34, 34, width - 68, height - 68, 20);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(245, 215, 125, 0.62)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.34)';
     ctx.lineWidth = 4;
     ctx.stroke();
-    ctx.fillStyle = '#f5d77d';
+    ctx.fillStyle = 'rgba(255, 248, 226, 0.9)';
     ctx.font = '900 42px Georgia';
     ctx.textAlign = 'center';
     ctx.fillText('SFG', width / 2, height / 2 + 14);

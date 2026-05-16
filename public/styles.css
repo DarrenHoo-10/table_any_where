@@ -805,11 +805,11 @@ select:focus {
 .playing-card::before {
   inset: 5px;
   z-index: 0;
-  border: 1px solid rgba(181, 138, 47, 0.42);
+  border: 1px solid rgba(32, 28, 21, 0.12);
   border-radius: 9px;
   background:
-    linear-gradient(90deg, transparent 47%, rgba(181, 138, 47, 0.16) 47% 53%, transparent 53%),
-    linear-gradient(0deg, transparent 47%, rgba(181, 138, 47, 0.12) 47% 53%, transparent 53%);
+    linear-gradient(90deg, transparent 47%, rgba(32, 28, 21, 0.06) 47% 53%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, rgba(32, 28, 21, 0.05) 47% 53%, transparent 53%);
 }
 
 .playing-card::after {
@@ -817,7 +817,7 @@ select:focus {
   z-index: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle, rgba(181, 138, 47, 0.18), transparent 66%);
+    radial-gradient(circle, rgba(32, 28, 21, 0.08), transparent 66%);
 }
 
 .playing-card.is-red {
@@ -865,7 +865,7 @@ select:focus {
   width: 42px;
   height: 42px;
   place-items: center;
-  border: 1px solid rgba(181, 138, 47, 0.26);
+  border: 1px solid rgba(32, 28, 21, 0.12);
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.74), transparent 24px),
@@ -896,11 +896,11 @@ select:focus {
 }
 
 .playing-card.is-back {
-  border-color: rgba(245, 215, 125, 0.42);
+  border-color: rgba(255, 255, 255, 0.18);
   background:
-    radial-gradient(circle at 50% 50%, rgba(245, 215, 125, 0.2), transparent 29px),
+    radial-gradient(circle at 50% 50%, rgba(128, 221, 201, 0.16), transparent 29px),
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 2px, transparent 2px 7px),
-    repeating-linear-gradient(-45deg, rgba(245, 215, 125, 0.08) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 8px),
     linear-gradient(145deg, #143e45 0%, #0d2834 58%, #071d25 100%);
   color: var(--ink);
   box-shadow:
@@ -910,19 +910,19 @@ select:focus {
 
 .playing-card.is-back::before {
   inset: 7px;
-  border-color: rgba(245, 215, 125, 0.5);
+  border-color: rgba(255, 255, 255, 0.2);
   background:
-    linear-gradient(90deg, transparent 46%, rgba(245, 215, 125, 0.16) 46% 54%, transparent 54%),
-    linear-gradient(0deg, transparent 46%, rgba(245, 215, 125, 0.16) 46% 54%, transparent 54%),
-    radial-gradient(circle at 50% 50%, transparent 0 15px, rgba(245, 215, 125, 0.18) 16px 17px, transparent 18px);
+    linear-gradient(90deg, transparent 46%, rgba(255, 255, 255, 0.08) 46% 54%, transparent 54%),
+    linear-gradient(0deg, transparent 46%, rgba(255, 255, 255, 0.08) 46% 54%, transparent 54%),
+    radial-gradient(circle at 50% 50%, transparent 0 15px, rgba(128, 221, 201, 0.14) 16px 17px, transparent 18px);
 }
 
 .playing-card.is-back::after {
   inset: 14px;
-  border: 1px solid rgba(245, 215, 125, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
   background:
-    conic-gradient(from 45deg, rgba(245, 215, 125, 0.18), transparent 18%, rgba(245, 215, 125, 0.18) 25%, transparent 43%, rgba(245, 215, 125, 0.18) 50%, transparent 68%, rgba(245, 215, 125, 0.18) 75%, transparent 93%, rgba(245, 215, 125, 0.18));
+    conic-gradient(from 45deg, rgba(255, 255, 255, 0.1), transparent 18%, rgba(255, 255, 255, 0.1) 25%, transparent 43%, rgba(255, 255, 255, 0.1) 50%, transparent 68%, rgba(255, 255, 255, 0.1) 75%, transparent 93%, rgba(255, 255, 255, 0.1));
 }
 
 .card-back-emblem {
@@ -932,12 +932,12 @@ select:focus {
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid rgba(245, 215, 125, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 50%;
   background: rgba(5, 20, 24, 0.62);
   box-shadow:
-    0 0 0 4px rgba(245, 215, 125, 0.08),
-    inset 0 0 16px rgba(245, 215, 125, 0.12);
+    0 0 0 4px rgba(255, 255, 255, 0.05),
+    inset 0 0 16px rgba(255, 255, 255, 0.08);
 }
 
 .card-back-suit {
@@ -948,7 +948,7 @@ select:focus {
 
 .card-back-monogram {
   margin-top: -2px;
-  color: var(--gold);
+  color: rgba(255, 248, 226, 0.86);
   font-size: 8px;
   font-weight: 900;
   line-height: 1;

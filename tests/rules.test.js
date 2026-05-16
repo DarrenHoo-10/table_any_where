@@ -62,6 +62,8 @@ test('mode ranking changes between zha jing hua and tractor mode', () => {
 test('normalizes room defaults conservatively', () => {
   assert.deepEqual(normalizeConfig({}).betOptions, [5, 10, 20, 50]);
   assert.deepEqual(normalizeConfig({ betOptions: [0, -1, 'bad'] }).betOptions, [5, 10, 20, 50]);
+  assert.equal(normalizeConfig({}).maxPlayers, 12);
+  assert.equal(normalizeConfig({ maxPlayers: 2, playerCount: 3 }).maxPlayers, 12);
   assert.equal(normalizeConfig({}).initialCoins, 1000);
   assert.equal(normalizeConfig({ initialCoins: 3000 }).initialCoins, 3000);
   assert.equal(normalizeConfig({}).baseBet, 5);
@@ -72,6 +74,21 @@ test('normalizes room defaults conservatively', () => {
   assert.equal(normalizeConfig({}).actionTimeoutSeconds, 180);
   assert.equal(normalizeConfig({ actionTimeoutSeconds: 45 }).actionTimeoutSeconds, 45);
   assert.equal(normalizeConfig({ actionTimeoutSeconds: 0 }).actionTimeoutSeconds, 10);
+});
+
+test('rooms no longer use custom player caps and reject only the thirteenth player', () => {
+  const manager = new RoomManager();
+  const { room } = manager.createRoom({ nickname: 'Host' }, { maxPlayers: 2 });
+
+  for (let index = 2; index <= 12; index += 1) {
+    manager.joinRoom(room.id, { nickname: `P${index}` });
+  }
+
+  assert.equal(room.players.length, 12);
+  assert.throws(
+    () => manager.joinRoom(room.id, { nickname: 'P13' }),
+    /房间人数已满/
+  );
 });
 
 test('room initial coins apply to host, joined players, and support coins', () => {

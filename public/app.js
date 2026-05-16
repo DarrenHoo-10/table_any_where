@@ -3,7 +3,6 @@ const DEFAULT_ROOM_CONFIG = {
   maxPlayers: 6,
   baseBet: 5,
   bonus: 50,
-  peekCost: 10,
   betOptions: [5, 10, 20, 50],
 };
 
@@ -67,7 +66,6 @@ const els = {};
   'maxPlayersInput',
   'baseBetInput',
   'bonusInput',
-  'peekCostInput',
   'betOptionsInput',
 ].forEach((id) => {
   els[id] = $(id);
@@ -276,7 +274,7 @@ function renderViews() {
 function renderRoom() {
   els.roomCodeText.textContent = state.room.id || '-';
   const config = state.room.config || DEFAULT_ROOM_CONFIG;
-  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · 照牌费随下注`;
+  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus}`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
 }
@@ -451,7 +449,6 @@ function readRoomConfig() {
     maxPlayers: clampNumber(els.maxPlayersInput.value, 2, 12, DEFAULT_ROOM_CONFIG.maxPlayers),
     baseBet: clampNumber(els.baseBetInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.baseBet),
     bonus: clampNumber(els.bonusInput.value, 0, 100000000, DEFAULT_ROOM_CONFIG.bonus),
-    peekCost: clampNumber(els.peekCostInput.value, 0, 100000000, DEFAULT_ROOM_CONFIG.peekCost),
     betOptions: parseBetOptions(els.betOptionsInput.value),
   };
 }
@@ -461,7 +458,6 @@ function applyDefaultConfig() {
   els.maxPlayersInput.value = DEFAULT_ROOM_CONFIG.maxPlayers;
   els.baseBetInput.value = DEFAULT_ROOM_CONFIG.baseBet;
   els.bonusInput.value = DEFAULT_ROOM_CONFIG.bonus;
-  els.peekCostInput.value = '同当前下注';
   els.betOptionsInput.value = DEFAULT_ROOM_CONFIG.betOptions.join('/');
 }
 

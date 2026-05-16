@@ -21,6 +21,8 @@ const MIME_TYPES = {
   '.webp': 'image/webp',
 };
 
+const NO_STORE_EXTENSIONS = new Set(['.css', '.html', '.js', '.json']);
+
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/health') {
     sendJson(res, 200, { ok: true });
@@ -160,7 +162,7 @@ function serveStatic(req, res) {
           res.end('Not found');
           return;
         }
-        res.writeHead(200, { 'content-type': MIME_TYPES['.html'], 'cache-control': 'no-cache' });
+        res.writeHead(200, { 'content-type': MIME_TYPES['.html'], 'cache-control': getCacheControl('.html') });
         res.end(indexData);
       });
       return;
@@ -168,10 +170,14 @@ function serveStatic(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       'content-type': MIME_TYPES[ext] || 'application/octet-stream',
-      'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+      'cache-control': getCacheControl(ext),
     });
     res.end(data);
   });
+}
+
+function getCacheControl(ext) {
+  return NO_STORE_EXTENSIONS.has(ext) ? 'no-store' : 'public, max-age=3600';
 }
 
 function bindSocket(socket, roomId, player) {

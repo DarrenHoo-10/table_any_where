@@ -8,6 +8,8 @@
   --gold: #f5d77d;
   --gold-deep: #b58a2f;
   --danger: #b44848;
+  --profit: #e45b5b;
+  --loss: #39b879;
   --panel: rgba(255, 248, 226, 0.08);
   --panel-strong: rgba(255, 248, 226, 0.14);
   --line: rgba(245, 215, 125, 0.28);
@@ -945,6 +947,14 @@ select:focus {
   color: var(--gold);
 }
 
+.peek-result-hand {
+  margin-top: 10px;
+}
+
+.peek-result-hand p {
+  color: var(--text);
+}
+
 .actions-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1136,8 +1146,7 @@ select:focus {
   list-style: none;
 }
 
-.player-card,
-.ranking-list li {
+.player-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1145,6 +1154,27 @@ select:focus {
   border-radius: 14px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.07);
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1.4fr) repeat(3, minmax(62px, 0.8fr));
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ranking-header {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ranking-row span,
+.ranking-row b {
+  text-align: right;
 }
 
 .player-card.is-me {
@@ -1201,6 +1231,14 @@ select:focus {
 .player-card b,
 .ranking-list b {
   color: var(--gold);
+}
+
+.ranking-list b.is-profit {
+  color: var(--profit);
+}
+
+.ranking-list b.is-loss {
+  color: var(--loss);
 }
 
 .final-view {

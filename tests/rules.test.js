@@ -116,7 +116,7 @@ test('single player can start, view cards, and settle a solo hand', () => {
   assert.equal(host.coins, 1000);
 });
 
-test('room initial coins apply to host, joined players, and support coins', () => {
+test('room initial coins apply to host, joined players, and only non-positive support coins', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom(
     { nickname: 'A' },
@@ -130,11 +130,13 @@ test('room initial coins apply to host, joined players, and support coins', () =
   startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
-  guest.coins = -10;
+  guest.coins = 0;
   manager.handleAction(room.id, host.id, { type: 'showdown', amount: 5 });
 
   assert.equal(room.lastSettlement.hadNegative, true);
-  assert.equal(guest.coins, 2990);
+  assert.deepEqual(room.lastSettlement.supportCoinPlayerIds, [guest.id]);
+  assert.equal(host.coins, 3005);
+  assert.equal(guest.coins, 3000);
 });
 
 test('players select unique zodiac avatars after entering the room', () => {
@@ -167,7 +169,7 @@ test('players select unique zodiac avatars after entering the room', () => {
   assert.equal(room.status, 'playing');
 });
 
-test('mirror-card compares hands, eliminates one player, and reveals cards to both players', () => {
+test('mirror-card requires consent, compares hands, and reveals the result to both players', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 3 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
@@ -185,15 +187,59 @@ test('mirror-card compares hands, eliminates one player, and reveals cards to bo
   manager.handleAction(room.id, guest.id, { type: 'view_self' });
 
   const before = host.coins;
-  const result = manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id });
+  const request = manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id });
+  assert.equal(host.coins, before);
+  assert.equal(room.hand.pot, 15);
+  assert.equal(request.pendingPeekRequest.requesterId, host.id);
+  assert.equal(request.pendingPeekRequest.targetPlayerId, guest.id);
+  assert.equal(request.pendingPeekRequest.cost, 5);
+  assert.equal(typeof request.pendingPeekRequest.requestedAt, 'number');
+  assert.throws(
+    () => manager.handleAction(room.id, host.id, { type: 'bet', amount: 5 }),
+    /正在等待照牌回应/
+  );
+
+  const result = manager.handleAction(room.id, guest.id, { type: 'respond_peek_player', accepted: true });
   assert.equal(before - host.coins, 5);
   assert.equal(room.hand.pot, 20);
+  assert.equal(room.hand.pendingPeekRequest, null);
   assert.deepEqual(result.privateMessages.map((item) => item.privateTo).sort(), [guest.id, host.id].sort());
   assert.deepEqual(result.privateMessages.find((item) => item.privateTo === host.id).peekTargetPlayerId, guest.id);
   assert.deepEqual(result.privateMessages.find((item) => item.privateTo === guest.id).peekTargetPlayerId, host.id);
+  assert.equal(result.privateMessages.every((item) => item.winnerId === host.id && item.loserId === guest.id), true);
+  assert.deepEqual(result.privateMessages.find((item) => item.privateTo === host.id).participantHands[host.id], [
+    { suit: 'S', rank: 'A', value: 14 },
+    { suit: 'H', rank: 'A', value: 14 },
+    { suit: 'D', rank: 'A', value: 14 },
+  ]);
+  assert.deepEqual(result.privateMessages.find((item) => item.privateTo === guest.id).participantHands[guest.id], [
+    { suit: 'S', rank: '2', value: 2 },
+    { suit: 'H', rank: '3', value: 3 },
+    { suit: 'D', rank: '4', value: 4 },
+  ]);
   assert.equal(room.hand.activePlayerIds.includes(guest.id), false);
   assert.equal(room.hand.foldedPlayerIds.includes(guest.id), true);
   assert.equal(room.hand.currentTurnPlayerId, tail.id);
+});
+
+test('mirror-card refusal clears the request without charging or consuming the peek', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 2 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
+
+  startReadyHand(manager, room, host.id);
+  manager.handleAction(room.id, guest.id, { type: 'view_self' });
+  const before = host.coins;
+
+  manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id });
+  const result = manager.handleAction(room.id, guest.id, { type: 'respond_peek_player', accepted: false });
+
+  assert.equal(result.accepted, false);
+  assert.equal(host.coins, before);
+  assert.equal(room.hand.pot, 10);
+  assert.equal(room.hand.pendingPeekRequest, null);
+  assert.deepEqual(room.hand.peekUsedPlayerIds, []);
+  assert.equal(room.hand.currentTurnPlayerId, host.id);
 });
 
 test('bet options enforce open and blind relative call levels', () => {
@@ -452,4 +498,9 @@ test('settlement adds support coins for negative balances and triggers final set
 
   assert.equal(room.status, 'finished');
   assert.equal(room.finalSettlement.reason, 'coin_cap_exceeded');
+  assert.equal(room.finalSettlement.ranking[0].principal, 1000);
+  assert.equal(
+    room.finalSettlement.ranking[0].profitLoss,
+    room.finalSettlement.ranking[0].coins - room.finalSettlement.ranking[0].principal
+  );
 });

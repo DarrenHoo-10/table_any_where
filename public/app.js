@@ -280,7 +280,13 @@ function handleMessage(message) {
   }
 
   if (message.type === 'private_cards') {
-    if (payload.targetPlayerId === state.playerId) {
+    if (payload.participantHands) {
+      state.peekedCards = payload;
+      if (state.room && state.room.hand && payload.participantHands[state.playerId]) {
+        state.room.hand.myCards = payload.participantHands[state.playerId];
+      }
+      state.status = '照牌结果已揭晓';
+    } else if (payload.targetPlayerId === state.playerId) {
       if (state.room && state.room.hand) state.room.hand.myCards = payload.cards;
       state.status = '已看自己的牌';
     } else {
@@ -427,7 +433,7 @@ function renderRoomRules() {
     rules.ranking,
     `每手开始所有玩家先扣底注 ${formatCoins(config.baseBet)}，奖池由下注、照牌、开牌费用累积。`,
     `看牌后仍可下注；照牌每手一次，只能照已经看过自己牌且未弃牌的玩家，输家直接出局。`,
-    `只剩两名玩家时可以开牌；豹子触发喜钱 ${formatCoins(config.bonus)}，金币为负时自动补回初始金额。`,
+    `只剩两名玩家时可以开牌；豹子触发喜钱 ${formatCoins(config.bonus)}，玩家金币小于等于0时只给该玩家补回初始金额。`,
     `本房间下注档为 ${betOptions}，行动时间为 ${timeoutMinutes} 分钟。`,
   ];
 
@@ -614,6 +620,10 @@ function cardBackMarkup() {
 function renderPeekedCards() {
   els.peekedCards.innerHTML = '';
   if (!state.peekedCards) return;
+  if (state.peekedCards.participantHands) {
+    renderPeekResult();
+    return;
+  }
   const target = findPlayer(state.peekedCards.targetPlayerId);
   const title = document.createElement('p');
   title.textContent = `照牌：${target ? target.nickname : '对手'}`;
@@ -624,11 +634,39 @@ function renderPeekedCards() {
   renderCards(row, state.peekedCards.cards);
 }
 
+function renderPeekResult() {
+  const requester = findPlayer(state.peekedCards.requesterId);
+  const target = findPlayer(state.peekedCards.targetPlayerId);
+  const winner = findPlayer(state.peekedCards.winnerId);
+  const title = document.createElement('p');
+  const leftName = requester ? requester.nickname : '发起方';
+  const rightName = target ? target.nickname : '被照方';
+  title.textContent = `照牌：${leftName} vs ${rightName} · 胜者 ${winner ? winner.nickname : '玩家'}`;
+  els.peekedCards.appendChild(title);
+
+  [state.peekedCards.requesterId, state.peekedCards.targetPlayerId].forEach((playerId) => {
+    const cards = state.peekedCards.participantHands[playerId];
+    if (!Array.isArray(cards)) return;
+    const player = findPlayer(playerId);
+    const item = document.createElement('article');
+    item.className = 'peek-result-hand';
+    const label = document.createElement('p');
+    label.textContent = `${player ? player.nickname : '玩家'}${playerId === state.peekedCards.winnerId ? ' · 赢' : ' · 输'}`;
+    const row = document.createElement('div');
+    row.className = 'card-row is-small';
+    item.appendChild(label);
+    item.appendChild(row);
+    els.peekedCards.appendChild(item);
+    renderCards(row, cards);
+  });
+}
+
 function renderActions() {
   const hand = safeHand();
   const activeIds = hand.activePlayerIds || [];
   const viewedIds = hand.viewedPlayerIds || [];
   const peekUsedIds = hand.peekUsedPlayerIds || [];
+  const pendingPeekRequest = hand.pendingPeekRequest;
   const isActive = activeIds.includes(state.playerId);
   const isTurn = hand.currentTurnPlayerId === state.playerId;
   const hasViewed = viewedIds.includes(state.playerId);
@@ -645,6 +683,11 @@ function renderActions() {
 
   if (!isActive) {
     els.actions.appendChild(actionNote('你已弃牌，等待结算'));
+    return;
+  }
+
+  if (pendingPeekRequest) {
+    renderPendingPeekActions(pendingPeekRequest);
     return;
   }
 
@@ -667,16 +710,45 @@ function renderActions() {
   });
 
   els.actions.appendChild(actionButton('弃牌', () => send('action', { type: 'fold' }), 'danger'));
-  els.actions.appendChild(actionButton(peekUsedIds.includes(state.playerId) ? '已照牌' : '照牌', () => {
-    const targetPlayerId = findPeekTarget();
-    if (targetPlayerId) send('action', { type: 'peek_player', targetPlayerId });
-  }, 'secondary', peekUsedIds.includes(state.playerId) || !findPeekTarget() || !enabledBetOptions.length));
+  const peekTargets = findPeekTargets();
+  if (peekTargets.length) {
+    peekTargets.forEach((targetPlayerId) => {
+      const target = findPlayer(targetPlayerId);
+      els.actions.appendChild(actionButton(`照 ${target ? target.nickname : '玩家'}`, () => {
+        send('action', { type: 'peek_player', targetPlayerId });
+      }, 'secondary', peekUsedIds.includes(state.playerId) || !enabledBetOptions.length));
+    });
+  } else {
+    els.actions.appendChild(actionButton(peekUsedIds.includes(state.playerId) ? '已照牌' : '照牌', () => {}, 'secondary', true));
+  }
   const isSoloShowdown = activeIds.length === 1;
   const defaultBet = isSoloShowdown ? 0 : enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0];
   els.actions.appendChild(actionButton('开牌', () => {
     send('action', { type: 'showdown' });
   }, 'primary', !hand.canShowdown || (!isSoloShowdown && !enabledBetOptions.length)));
   els.actions.lastChild.textContent = isSoloShowdown ? '开牌' : `开牌 ${defaultBet}`;
+}
+
+function renderPendingPeekActions(request) {
+  const requester = findPlayer(request.requesterId);
+  const target = findPlayer(request.targetPlayerId);
+  if (request.targetPlayerId === state.playerId) {
+    els.actions.appendChild(actionNote(`${requester ? requester.nickname : '玩家'} 请求照你的牌`));
+    els.actions.appendChild(actionButton('同意照牌', () => {
+      send('action', { type: 'respond_peek_player', accepted: true });
+    }, 'primary'));
+    els.actions.appendChild(actionButton('拒绝照牌', () => {
+      send('action', { type: 'respond_peek_player', accepted: false });
+    }, 'secondary'));
+    return;
+  }
+
+  if (request.requesterId === state.playerId) {
+    els.actions.appendChild(actionNote(`等待 ${target ? target.nickname : '对方'} 同意照牌`));
+    return;
+  }
+
+  els.actions.appendChild(actionNote(`${requester ? requester.nickname : '玩家'} 正在等待 ${target ? target.nickname : '对方'} 回应照牌`));
 }
 
 function renderSettlement() {
@@ -723,9 +795,22 @@ function renderFinal() {
   const settlement = state.room.finalSettlement;
   if (!settlement) return;
   els.rankingList.innerHTML = '';
+  const header = document.createElement('li');
+  header.className = 'ranking-row ranking-header';
+  header.innerHTML = '<span>玩家</span><span>本金</span><span>余额</span><span>盈亏</span>';
+  els.rankingList.appendChild(header);
   (settlement.ranking || []).forEach((item) => {
     const row = document.createElement('li');
-    row.innerHTML = `<strong>${item.rank}. ${escapeHtml(item.nickname)}</strong><b>${formatCoins(item.coins)}</b>`;
+    const principal = Number(item.principal ?? (state.room.config && state.room.config.initialCoins) ?? DEFAULT_ROOM_CONFIG.initialCoins);
+    const balance = Number(item.coins || 0);
+    const profitLoss = Number(item.profitLoss ?? (balance - principal));
+    row.className = 'ranking-row';
+    row.innerHTML = `
+      <strong>${item.rank}. ${escapeHtml(item.nickname)}</strong>
+      <span>${formatCoins(principal)}</span>
+      <span>${formatCoins(balance)}</span>
+      <b class="${profitLoss >= 0 ? 'is-profit' : 'is-loss'}">${formatProfitLoss(profitLoss)}</b>
+    `;
     els.rankingList.appendChild(row);
   });
 }
@@ -978,6 +1063,7 @@ function normalizeHand(hand) {
     foldedPlayerIds: [],
     viewedPlayerIds: [],
     peekUsedPlayerIds: [],
+    pendingPeekRequest: null,
     currentBet: null,
     legalBetOptions: [],
     canShowdown: false,
@@ -1008,10 +1094,14 @@ function getCurrentPlayer() {
 }
 
 function findPeekTarget() {
+  return findPeekTargets()[0] || '';
+}
+
+function findPeekTargets() {
   const hand = safeHand();
   const activeIds = hand.activePlayerIds || [];
   const viewedIds = hand.viewedPlayerIds || [];
-  return activeIds.find((id) => id !== state.playerId && viewedIds.includes(id)) || '';
+  return activeIds.filter((id) => id !== state.playerId && viewedIds.includes(id));
 }
 
 function describeAction(payload) {
@@ -1021,7 +1111,8 @@ function describeAction(payload) {
     bet: `下注 ${payload.amount}`,
     fold: '弃牌',
     view_self: '看牌',
-    peek_player: '照牌',
+    peek_player: payload.winnerId ? '完成照牌' : '请求照牌',
+    respond_peek_player: payload.accepted ? '同意照牌' : '拒绝照牌',
     showdown: '开牌',
     timeout_fold: '超时弃牌',
   };
@@ -1044,6 +1135,12 @@ function formatTurnTimer(deadlineAt) {
 
 function formatCoins(value) {
   return Number(value || 0).toLocaleString('zh-CN');
+}
+
+function formatProfitLoss(value) {
+  const number = Number(value || 0);
+  const sign = number >= 0 ? '+' : '-';
+  return `${sign}${formatCoins(Math.abs(number))}`;
 }
 
 function clampNumber(value, min, max, fallback) {

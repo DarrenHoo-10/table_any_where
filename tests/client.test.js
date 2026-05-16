@@ -132,6 +132,22 @@ test('new room requests clear stale saved sessions and ignore stale room states'
   assert.match(appJs, /function shouldAcceptRoomState\(room\)/);
 });
 
+test('final settlement ranking shows principal, balance, and colored profit loss', () => {
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
+  const renderFinalBlock = getFunctionBlock(appJs, 'renderFinal');
+
+  assert.match(renderFinalBlock, /本金/);
+  assert.match(renderFinalBlock, /余额/);
+  assert.match(renderFinalBlock, /盈亏/);
+  assert.match(renderFinalBlock, /formatProfitLoss\(profitLoss\)/);
+  assert.match(appJs, /const sign = number >= 0 \? '\+' : '-';/);
+  assert.match(css, /--profit: #e45b5b;/);
+  assert.match(css, /--loss: #39b879;/);
+  assert.match(css, /\.ranking-list b\.is-profit/);
+  assert.match(css, /\.ranking-list b\.is-loss/);
+});
+
 function getCssBlock(css, selector) {
   const start = css.indexOf(`${selector} {`);
   if (start === -1) return '';

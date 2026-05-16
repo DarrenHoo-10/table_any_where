@@ -136,8 +136,8 @@ class RoomManager {
     if (room.status === 'playing') {
       const hand = room.hand;
       if (hand && hand.activePlayerIds.includes(playerId)) {
-        const currentIndex = hand.activePlayerIds.indexOf(playerId);
         const wasCurrentTurn = hand.currentTurnPlayerId === playerId;
+        this.clearPendingPeekIfParticipant(hand, playerId);
         hand.foldedPlayerIds.push(playerId);
         hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
         hand.actionLog.push({ type: 'leave_fold', playerId, at: Date.now() });
@@ -145,7 +145,7 @@ class RoomManager {
         if (hand.activePlayerIds.length === 1) {
           this.settleHand(room, 'player_left');
         } else if (wasCurrentTurn) {
-          this.advanceTurnAfterRemovedPlayer(room, currentIndex);
+          this.advanceTurnAfterPlayer(room, playerId);
         }
       }
     }
@@ -197,6 +197,7 @@ class RoomManager {
       foldedPlayerIds: [],
       viewedPlayerIds: [],
       peekUsedPlayerIds: [],
+      pendingPeekRequest: null,
       currentBet: null,
       currentTurnPlayerId,
       actionLog: [],
@@ -222,12 +223,14 @@ class RoomManager {
 
     const type = action.type;
     if (type === 'view_self') return this.viewSelf(room, playerId);
+    if (type === 'respond_peek_player') return this.respondPeekPlayer(room, playerId, action.accepted);
 
     this.requireTurn(room, playerId);
+    this.requireNoPendingPeek(room);
 
     if (type === 'bet') return this.bet(room, playerId, action.amount);
     if (type === 'fold') return this.fold(room, playerId);
-    if (type === 'peek_player') return this.peekPlayer(room, playerId, action.targetPlayerId);
+    if (type === 'peek_player') return this.requestPeekPlayer(room, playerId, action.targetPlayerId);
     if (type === 'showdown') return this.showdown(room, playerId, action.amount);
 
     throw new Error('未知操作。');
@@ -260,7 +263,6 @@ class RoomManager {
   fold(room, playerId) {
     const hand = room.hand;
     if (!hand.activePlayerIds.includes(playerId)) throw new Error('你已经弃牌。');
-    const currentIndex = hand.activePlayerIds.indexOf(playerId);
     hand.foldedPlayerIds.push(playerId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
     hand.actionLog.push({ type: 'fold', playerId, at: Date.now() });
@@ -268,49 +270,111 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'last_player');
     } else {
-      this.advanceTurnAfterRemovedPlayer(room, currentIndex);
+      this.advanceTurnAfterPlayer(room, playerId);
     }
 
     return { room };
   }
 
-  peekPlayer(room, playerId, targetPlayerId) {
+  requestPeekPlayer(room, playerId, targetPlayerId) {
     const hand = room.hand;
     if (hand.peekUsedPlayerIds.includes(playerId)) throw new Error('本手牌已经照牌过一次。');
     if (!hand.activePlayerIds.includes(targetPlayerId)) throw new Error('只能照未弃牌玩家。');
     if (targetPlayerId === playerId) throw new Error('不能照自己的牌。');
     if (!hand.viewedPlayerIds.includes(targetPlayerId)) throw new Error('只能照已经看过自己的牌的玩家。');
 
-    const player = this.requirePlayer(room, playerId);
     const cost = this.getCurrentBetCost(room, playerId);
+    hand.pendingPeekRequest = {
+      requesterId: playerId,
+      targetPlayerId,
+      cost,
+      requestedAt: Date.now(),
+    };
+    hand.actionLog.push({ type: 'peek_request', playerId, targetPlayerId, cost, at: Date.now() });
+
+    return { room, pendingPeekRequest: Object.assign({}, hand.pendingPeekRequest) };
+  }
+
+  respondPeekPlayer(room, playerId, accepted) {
+    const hand = room.hand;
+    const request = hand.pendingPeekRequest;
+    if (!request) throw new Error('当前没有待处理的照牌请求。');
+    if (request.targetPlayerId !== playerId) throw new Error('只有被照牌的玩家可以回应。');
+    if (!hand.activePlayerIds.includes(request.requesterId) || !hand.activePlayerIds.includes(request.targetPlayerId)) {
+      hand.pendingPeekRequest = null;
+      throw new Error('照牌双方必须都在本手牌中。');
+    }
+
+    if (!accepted) {
+      hand.pendingPeekRequest = null;
+      hand.actionLog.push({
+        type: 'peek_response',
+        playerId,
+        requesterId: request.requesterId,
+        targetPlayerId: request.targetPlayerId,
+        accepted: false,
+        at: Date.now(),
+      });
+      return { room, accepted: false, requesterId: request.requesterId, targetPlayerId: request.targetPlayerId };
+    }
+
+    return this.resolvePeekPlayer(room, request);
+  }
+
+  resolvePeekPlayer(room, request) {
+    const hand = room.hand;
+    const playerId = request.requesterId;
+    const targetPlayerId = request.targetPlayerId;
+    const player = this.requirePlayer(room, playerId);
+    const cost = request.cost;
     player.coins -= cost;
     hand.pot += cost;
     hand.peekUsedPlayerIds.push(playerId);
+    hand.pendingPeekRequest = null;
     const compareResult = compareHands(hand.hands[playerId], hand.hands[targetPlayerId], room.config.mode);
     const winnerId = compareResult > 0 ? playerId : targetPlayerId;
     const loserId = winnerId === playerId ? targetPlayerId : playerId;
-    const loserIndex = hand.activePlayerIds.indexOf(loserId);
+    const participantHands = {
+      [playerId]: hand.hands[playerId].map(publicCard),
+      [targetPlayerId]: hand.hands[targetPlayerId].map(publicCard),
+    };
     const privateMessages = [
       {
         privateTo: playerId,
         privateCards: hand.hands[targetPlayerId].map(publicCard),
         peekTargetPlayerId: targetPlayerId,
+        peekRequesterId: playerId,
+        winnerId,
+        loserId,
+        participantHands,
       },
       {
         privateTo: targetPlayerId,
         privateCards: hand.hands[playerId].map(publicCard),
         peekTargetPlayerId: playerId,
+        peekRequesterId: playerId,
+        winnerId,
+        loserId,
+        participantHands,
       },
     ];
 
     hand.foldedPlayerIds.push(loserId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== loserId);
+    hand.actionLog.push({
+      type: 'peek_response',
+      playerId: targetPlayerId,
+      requesterId: playerId,
+      targetPlayerId,
+      accepted: true,
+      at: Date.now(),
+    });
     hand.actionLog.push({ type: 'peek_player', playerId, targetPlayerId, winnerId, loserId, cost, at: Date.now() });
 
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'mirror_card', [playerId, targetPlayerId]);
     } else if (loserId === playerId) {
-      this.advanceTurnAfterRemovedPlayer(room, loserIndex);
+      this.advanceTurnAfterPlayer(room, loserId);
     } else {
       this.advanceTurn(room);
     }
@@ -318,6 +382,11 @@ class RoomManager {
     return {
       room,
       privateMessages,
+      accepted: true,
+      requesterId: playerId,
+      targetPlayerId,
+      winnerId,
+      loserId,
     };
   }
 
@@ -370,12 +439,14 @@ class RoomManager {
       });
     });
 
-    const hadNegative = room.players.some((player) => player.coins < 0);
-    if (hadNegative) {
-      room.players.forEach((player) => {
+    const supportCoinPlayerIds = [];
+    room.players.forEach((player) => {
+      if (player.coins <= 0) {
         player.coins += room.config.initialCoins;
-      });
-    }
+        supportCoinPlayerIds.push(player.id);
+      }
+    });
+    const hadNegative = supportCoinPlayerIds.length > 0;
 
     const capExceeded = room.players.some((player) => player.coins > MAX_COINS);
     const handSummaries = Object.fromEntries(
@@ -391,6 +462,7 @@ class RoomManager {
       beforeCoins,
       afterCoins: Object.fromEntries(room.players.map((player) => [player.id, player.coins])),
       bonusTransfers,
+      supportCoinPlayerIds,
       hadNegative,
       capExceeded,
       hands: handSummaries,
@@ -406,6 +478,7 @@ class RoomManager {
 
   createFinalSettlement(room, reason) {
     room.status = 'finished';
+    const principal = room.config.initialCoins;
     room.finalSettlement = {
       type: 'final_settlement',
       reason,
@@ -417,7 +490,9 @@ class RoomManager {
           playerId: player.id,
           nickname: player.nickname,
           avatarUrl: player.avatarUrl,
+          principal,
           coins: player.coins,
+          profitLoss: player.coins - principal,
         })),
       settledAt: Date.now(),
     };
@@ -442,6 +517,19 @@ class RoomManager {
 
   requireTurn(room, playerId) {
     if (room.hand.currentTurnPlayerId !== playerId) throw new Error('还没轮到你。');
+  }
+
+  requireNoPendingPeek(room) {
+    if (room.hand.pendingPeekRequest) throw new Error('正在等待照牌回应。');
+  }
+
+  clearPendingPeekIfParticipant(hand, playerId) {
+    if (
+      hand.pendingPeekRequest
+      && [hand.pendingPeekRequest.requesterId, hand.pendingPeekRequest.targetPlayerId].includes(playerId)
+    ) {
+      hand.pendingPeekRequest = null;
+    }
   }
 
   requirePlayer(room, playerId) {
@@ -535,18 +623,52 @@ class RoomManager {
   advanceTurn(room) {
     const hand = room.hand;
     if (!hand || hand.activePlayerIds.length === 0) return;
-    const currentIndex = hand.activePlayerIds.indexOf(hand.currentTurnPlayerId);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % hand.activePlayerIds.length;
-    hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    const nextPlayerId = this.findNextActivePlayerId(room, hand.currentTurnPlayerId);
+    if (!nextPlayerId) return;
+    hand.currentTurnPlayerId = nextPlayerId;
     this.resetTurnDeadline(room);
   }
 
-  advanceTurnAfterRemovedPlayer(room, removedIndex, now = Date.now()) {
+  advanceTurnAfterPlayer(room, playerId, now = Date.now()) {
     const hand = room.hand;
     if (!hand || hand.activePlayerIds.length === 0) return;
-    const nextIndex = removedIndex === -1 ? 0 : removedIndex % hand.activePlayerIds.length;
-    hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    const nextPlayerId = this.findNextActivePlayerId(room, playerId);
+    if (!nextPlayerId) return;
+    hand.currentTurnPlayerId = nextPlayerId;
     this.resetTurnDeadline(room, now);
+  }
+
+  findNextActivePlayerId(room, playerId) {
+    const hand = room.hand;
+    if (!hand || hand.activePlayerIds.length === 0) return '';
+    const activeIds = new Set(hand.activePlayerIds);
+    const ring = this.createSeatRing(room);
+    if (!ring.length) return hand.activePlayerIds[0] || '';
+
+    const start = ring.find((node) => node.playerId === playerId)
+      || ring.find((node) => node.playerId === hand.currentTurnPlayerId)
+      || ring[0];
+    let node = start.next;
+
+    for (let steps = 0; steps < ring.length; steps += 1) {
+      if (activeIds.has(node.playerId)) return node.playerId;
+      node = node.next;
+    }
+
+    return '';
+  }
+
+  createSeatRing(room) {
+    const ring = room.players
+      .slice()
+      .sort((a, b) => a.seat - b.seat)
+      .map((player) => ({ playerId: player.id, next: null }));
+
+    ring.forEach((node, index) => {
+      node.next = ring[(index + 1) % ring.length] || null;
+    });
+
+    return ring;
   }
 
   expireCurrentTurn(roomId, now = Date.now()) {
@@ -561,15 +683,15 @@ class RoomManager {
       return null;
     }
 
-    const currentIndex = hand.activePlayerIds.indexOf(playerId);
     hand.foldedPlayerIds.push(playerId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
     hand.actionLog.push({ type: 'timeout_fold', playerId, at: now });
+    this.clearPendingPeekIfParticipant(hand, playerId);
 
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'action_timeout');
     } else {
-      this.advanceTurnAfterRemovedPlayer(room, currentIndex, now);
+      this.advanceTurnAfterPlayer(room, playerId, now);
     }
 
     return { room, playerId };
@@ -628,6 +750,7 @@ class RoomManager {
       foldedPlayerIds: hand.foldedPlayerIds.slice(),
       viewedPlayerIds: hand.viewedPlayerIds.slice(),
       peekUsedPlayerIds: hand.peekUsedPlayerIds.slice(),
+      pendingPeekRequest: hand.pendingPeekRequest ? Object.assign({}, hand.pendingPeekRequest) : null,
       currentBet: hand.currentBet ? Object.assign({}, hand.currentBet) : null,
       legalBetOptions: viewerId ? this.getLegalBetOptions(room, viewerId) : [],
       canShowdown: [1, 2].includes(hand.activePlayerIds.length),

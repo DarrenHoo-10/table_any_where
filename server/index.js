@@ -121,8 +121,12 @@ function handleMessage(socket, message) {
     const room = result.room;
     broadcastRoom(room, 'action_result', {
       playerId: socket.playerId,
-      action: payload.type,
-      targetPlayerId: payload.targetPlayerId,
+      action: result.action || payload.type,
+      targetPlayerId: result.targetPlayerId ?? payload.targetPlayerId,
+      requesterId: result.requesterId,
+      accepted: result.accepted,
+      winnerId: result.winnerId,
+      loserId: result.loserId,
       amount: result.amount ?? payload.amount,
     });
     if (Array.isArray(result.privateMessages)) {
@@ -130,6 +134,10 @@ function handleMessage(socket, message) {
         sendToPlayer(message.privateTo, 'private_cards', {
           cards: message.privateCards,
           targetPlayerId: message.peekTargetPlayerId || message.privateTo,
+          requesterId: message.peekRequesterId,
+          winnerId: message.winnerId,
+          loserId: message.loserId,
+          participantHands: message.participantHands,
         });
       });
     }

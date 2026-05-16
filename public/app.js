@@ -305,10 +305,13 @@ function renderPlayers() {
     els.playerList.appendChild(item);
   });
 
-  els.startHandBtn.disabled = !isHost() || players.length < 2 || !['lobby', 'between_hands'].includes(state.room.status);
-  els.continueHandBtn.hidden = !isHost();
-  els.continueHandBtn.disabled = !isHost() || state.room.status !== 'between_hands';
-  els.finishGameBtn.disabled = !isHost() || state.room.status === 'playing';
+  const host = isHost();
+  els.startHandBtn.hidden = !host;
+  els.startHandBtn.disabled = !host || players.length < 2 || !['lobby', 'between_hands'].includes(state.room.status);
+  els.continueHandBtn.hidden = !host;
+  els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands';
+  els.finishGameBtn.hidden = !host;
+  els.finishGameBtn.disabled = !host || state.room.status === 'playing';
 }
 
 function renderHand() {

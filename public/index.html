@@ -36,9 +36,9 @@
             <input id="nicknameInput" autocomplete="nickname" maxlength="16" placeholder="输入昵称">
           </div>
 
-          <div class="field-group">
-            <label>头像</label>
-            <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
+          <div class="form-section-title">
+            <strong>创建房间</strong>
+            <span>只有房主需要设置玩法</span>
           </div>
 
           <div class="mode-grid">
@@ -56,6 +56,10 @@
           </div>
 
           <div class="settings-grid">
+            <div class="field-group">
+              <label for="initialCoinsInput">初始金额</label>
+              <input id="initialCoinsInput" type="number" min="1" step="1">
+            </div>
             <div class="field-group">
               <label for="baseBetInput">底注</label>
               <input id="baseBetInput" type="number" min="1" step="1">
@@ -75,6 +79,11 @@
           </div>
 
           <button id="createRoomBtn" class="primary-btn wide-btn" type="button">创建房间</button>
+
+          <div class="form-section-title">
+            <strong>加入房间</strong>
+            <span>进入房间后先选择头像</span>
+          </div>
 
           <div class="join-strip">
             <div class="field-group compact-field">
@@ -97,6 +106,14 @@
             <button id="copyRoomBtn" class="ghost-btn" type="button">复制</button>
             <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
           </div>
+        </section>
+
+        <section id="roomAvatarPanel" class="room-avatar-panel">
+          <div class="panel-title">
+            <h3>选择头像</h3>
+            <span data-avatar-help>同一房间头像不能重复</span>
+          </div>
+          <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
         </section>
 
         <section class="felt-table">

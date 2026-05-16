@@ -11,6 +11,18 @@ const {
 } = require('../server/rules');
 
 const C = (rank, suit = 'S') => ({ rank, suit, value: rank === 'A' ? 14 : rank === 'K' ? 13 : rank === 'Q' ? 12 : rank === 'J' ? 11 : Number(rank) });
+const TEST_AVATARS = ['rat', 'ox', 'tiger', 'rabbit', 'dragon', 'snake', 'horse', 'goat', 'monkey', 'rooster', 'dog', 'pig'];
+
+function selectMissingAvatars(manager, room) {
+  room.players.forEach((player, index) => {
+    if (!player.avatarUrl) manager.selectAvatar(room.id, player.id, TEST_AVATARS[index]);
+  });
+}
+
+function startReadyHand(manager, room, playerId, now) {
+  selectMissingAvatars(manager, room);
+  return manager.startHand(room.id, playerId, now);
+}
 
 test('uses one deck for up to 8 players and two decks after that', () => {
   assert.equal(getDeckCount(8), 1);
@@ -50,6 +62,8 @@ test('mode ranking changes between zha jing hua and tractor mode', () => {
 test('normalizes room defaults conservatively', () => {
   assert.deepEqual(normalizeConfig({}).betOptions, [5, 10, 20, 50]);
   assert.deepEqual(normalizeConfig({ betOptions: [0, -1, 'bad'] }).betOptions, [5, 10, 20, 50]);
+  assert.equal(normalizeConfig({}).initialCoins, 1000);
+  assert.equal(normalizeConfig({ initialCoins: 3000 }).initialCoins, 3000);
   assert.equal(normalizeConfig({}).baseBet, 5);
   assert.equal(normalizeConfig({}).bonus, 50);
   assert.equal(normalizeConfig({ bonus: 0 }).bonus, 0);
@@ -60,13 +74,64 @@ test('normalizes room defaults conservatively', () => {
   assert.equal(normalizeConfig({ actionTimeoutSeconds: 0 }).actionTimeoutSeconds, 10);
 });
 
+test('room initial coins apply to host, joined players, and support coins', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom(
+    { nickname: 'A' },
+    { maxPlayers: 2, initialCoins: 3000, bonus: 0 }
+  );
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  assert.equal(host.coins, 3000);
+  assert.equal(guest.coins, 3000);
+
+  startReadyHand(manager, room, host.id);
+  room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
+  room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
+  guest.coins = -10;
+  manager.handleAction(room.id, host.id, { type: 'showdown', amount: 5 });
+
+  assert.equal(room.lastSettlement.hadNegative, true);
+  assert.equal(guest.coins, 2990);
+});
+
+test('players select unique zodiac avatars after entering the room', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A', avatarUrl: 'rat' }, { maxPlayers: 3 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B', avatarUrl: 'rat' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  assert.equal(host.avatarUrl, '');
+  assert.equal(guest.avatarUrl, '');
+  assert.equal(tail.avatarUrl, '');
+  assert.throws(() => manager.startHand(room.id, host.id), /请选择头像/);
+
+  manager.selectAvatar(room.id, host.id, 'rat');
+  assert.throws(() => manager.selectAvatar(room.id, guest.id, 'rat'), /头像已被选择/);
+  manager.selectAvatar(room.id, guest.id, 'ox');
+
+  const hostView = manager.serializeRoom(room, host.id);
+  const usedRat = hostView.avatarOptions.find((option) => option.key === 'rat');
+  const usedOx = hostView.avatarOptions.find((option) => option.key === 'ox');
+  const openTiger = hostView.avatarOptions.find((option) => option.key === 'tiger');
+  assert.equal(usedRat.disabled, false);
+  assert.equal(usedRat.selectedByPlayerId, host.id);
+  assert.equal(usedOx.disabled, true);
+  assert.equal(usedOx.selectedByPlayerId, guest.id);
+  assert.equal(openTiger.disabled, false);
+
+  manager.selectAvatar(room.id, tail.id, 'tiger');
+  startReadyHand(manager, room, host.id);
+  assert.equal(room.status, 'playing');
+});
+
 test('mirror-card compares hands, eliminates one player, and reveals cards to both players', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 3 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
   const { player: tail } = manager.joinRoom(room.id, { nickname: '后手' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
   room.hand.hands[tail.id] = [C('K'), C('K', 'H'), C('K', 'D')];
@@ -97,7 +162,7 @@ test('bet options enforce open and blind relative call levels', () => {
   );
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   manager.handleAction(room.id, host.id, { type: 'view_self' });
   manager.handleAction(room.id, host.id, { type: 'bet', amount: 20 });
 
@@ -128,7 +193,7 @@ test('open and blind calls use adjacent bet option levels', () => {
   );
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   manager.handleAction(room.id, host.id, { type: 'view_self' });
   manager.handleAction(room.id, host.id, { type: 'bet', amount: 50 });
 
@@ -159,7 +224,7 @@ test('blind players cannot choose a level above the highest callable open level'
   );
 
   manager.joinRoom(room.id, { nickname: 'B' });
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
 
   assert.throws(
     () => manager.handleAction(room.id, host.id, { type: 'bet', amount: 50 }),
@@ -179,7 +244,7 @@ test('showdown defaults to current legal bet and reveals both contenders', () =>
   );
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
   manager.handleAction(room.id, host.id, { type: 'view_self' });
@@ -200,7 +265,7 @@ test('serialized hand only reveals viewed cards and copies mutable arrays', () =
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   manager.handleAction(room.id, host.id, { type: 'view_self' });
 
   const hostView = manager.serializeHand(room, host.id);
@@ -218,7 +283,7 @@ test('active player leaving during a hand folds and settles when one player rema
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2, bonus: 0 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   const pot = room.hand.pot;
   const hostBefore = host.coins;
 
@@ -236,7 +301,7 @@ test('current player leaving advances turn to the next active seat', () => {
   const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
   const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   manager.handleAction(room.id, host.id, { type: 'bet', amount: 5 });
   assert.equal(room.hand.currentTurnPlayerId, middle.id);
 
@@ -255,7 +320,7 @@ test('expired turns fold the current player and advance to the next active seat'
   const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
   const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
 
-  manager.startHand(room.id, host.id, 1000);
+  startReadyHand(manager, room, host.id, 1000);
   assert.equal(room.hand.currentTurnPlayerId, host.id);
   assert.equal(room.hand.turnDeadlineAt, 11000);
 
@@ -275,7 +340,7 @@ test('new hands start from the player after the previous winner in join order', 
   const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
   const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('2'), C('3', 'H'), C('4', 'D')];
   room.hand.hands[middle.id] = [C('A'), C('A', 'H'), C('A', 'D')];
   room.hand.hands[tail.id] = [C('K'), C('K', 'H'), C('K', 'D')];
@@ -283,7 +348,7 @@ test('new hands start from the player after the previous winner in join order', 
   manager.handleAction(room.id, middle.id, { type: 'showdown', amount: 5 });
   assert.deepEqual(room.lastSettlement.winnerIds, [middle.id]);
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
 
   assert.equal(room.hand.currentTurnPlayerId, tail.id);
 });
@@ -293,7 +358,7 @@ test('settlement adds support coins for negative balances and triggers final set
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2, bonus: 50 });
   const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
 
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
   guest.coins = -20;
@@ -306,7 +371,7 @@ test('settlement adds support coins for negative balances and triggers final set
   room.finalSettlement = null;
   host.coins = MAX_COINS - 10;
   guest.coins = 1000;
-  manager.startHand(room.id, host.id);
+  startReadyHand(manager, room, host.id);
   room.hand.hands[host.id] = [C('K'), C('K', 'H'), C('K', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
   manager.handleAction(room.id, guest.id, { type: 'showdown', amount: 20 });

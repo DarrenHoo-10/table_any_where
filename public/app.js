@@ -1,6 +1,7 @@
 const DEFAULT_ROOM_CONFIG = {
   mode: 'zha_jing_hua',
   maxPlayers: 6,
+  initialCoins: 1000,
   baseBet: 5,
   bonus: 50,
   betOptions: [5, 10, 20, 50],
@@ -68,6 +69,7 @@ const els = {};
   'finalView',
   'roomCodeText',
   'copyRoomBtn',
+  'roomAvatarPanel',
   'playerList',
   'startHandBtn',
   'leaveRoomBtn',
@@ -83,6 +85,7 @@ const els = {};
   'backHomeBtn',
   'modeSelect',
   'maxPlayersInput',
+  'initialCoinsInput',
   'baseBetInput',
   'bonusInput',
   'betOptionsInput',
@@ -95,7 +98,6 @@ init();
 
 function init() {
   if (els.nicknameInput) els.nicknameInput.value = state.nickname;
-  renderAvatarPicker();
   applyDefaultConfig();
   bindEvents();
   connect();
@@ -111,10 +113,10 @@ function bindEvents() {
 
   els.avatarPicker.addEventListener('click', (event) => {
     const button = event.target.closest('[data-avatar]');
-    if (!button) return;
+    if (!button || button.disabled) return;
     state.avatarUrl = button.dataset.avatar;
     localStorage.setItem('avatarUrl', state.avatarUrl);
-    renderAvatarPicker();
+    if (state.room) send('select_avatar', { avatarUrl: state.avatarUrl });
   });
 
   els.createRoomBtn.addEventListener('click', () => {
@@ -215,6 +217,7 @@ function handleMessage(message) {
     if (state.leavingRoom) return;
     state.room = normalizeRoom(payload);
     state.roomId = state.room.id;
+    syncSelectedAvatar();
     if (!state.room.hand) state.peekedCards = null;
     if (state.room.finalSettlement) state.status = '游戏已结算';
   }
@@ -277,6 +280,7 @@ function render() {
   renderViews();
   if (!state.room) return;
   renderRoom();
+  renderAvatarPicker();
   renderPlayers();
   renderHand();
   renderSettlement();
@@ -302,7 +306,7 @@ function renderRoom() {
   els.roomCodeText.textContent = state.room.id || '-';
   const config = state.room.config || DEFAULT_ROOM_CONFIG;
   const timeoutMinutes = Math.round((config.actionTimeoutSeconds || DEFAULT_ROOM_CONFIG.actionTimeoutSeconds) / 60);
-  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
+  const summary = `${MODE_LABELS[config.mode] || config.mode} · 初始 ${formatCoins(config.initialCoins || DEFAULT_ROOM_CONFIG.initialCoins)} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
 }
@@ -321,6 +325,7 @@ function renderPlayers() {
     const tags = [`顺序 ${player.seat}`];
     if (player.isHost) tags.push('房主');
     if (player.connected === false) tags.push('离线');
+    if (!normalizeAvatarKey(player.avatarUrl)) tags.push('待选头像');
     if ((hand.foldedPlayerIds || []).includes(player.id)) tags.push('弃牌');
     if ((hand.viewedPlayerIds || []).includes(player.id)) tags.push('已看');
     if (hand.currentTurnPlayerId === player.id) tags.push('行动');
@@ -339,8 +344,10 @@ function renderPlayers() {
   });
 
   const host = isHost();
+  const allAvatarsSelected = players.every((player) => normalizeAvatarKey(player.avatarUrl));
   els.startHandBtn.hidden = !host || state.room.status !== 'lobby';
-  els.startHandBtn.disabled = !host || players.length < 2 || state.room.status !== 'lobby';
+  els.startHandBtn.disabled = !host || players.length < 2 || state.room.status !== 'lobby' || !allAvatarsSelected;
+  els.startHandBtn.title = !allAvatarsSelected ? '所有玩家选择头像后才能开始发牌。' : '';
   els.continueHandBtn.hidden = !host || state.room.status !== 'between_hands';
   els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands';
   els.finishGameBtn.hidden = !host;
@@ -559,6 +566,7 @@ function readRoomConfig() {
   return {
     mode: els.modeSelect.value,
     maxPlayers: clampNumber(els.maxPlayersInput.value, 2, 12, DEFAULT_ROOM_CONFIG.maxPlayers),
+    initialCoins: clampNumber(els.initialCoinsInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.initialCoins),
     baseBet: clampNumber(els.baseBetInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.baseBet),
     bonus: clampNumber(els.bonusInput.value, 0, 100000000, DEFAULT_ROOM_CONFIG.bonus),
     betOptions: parseBetOptions(els.betOptionsInput.value),
@@ -569,6 +577,7 @@ function readRoomConfig() {
 function applyDefaultConfig() {
   els.modeSelect.value = DEFAULT_ROOM_CONFIG.mode;
   els.maxPlayersInput.value = DEFAULT_ROOM_CONFIG.maxPlayers;
+  els.initialCoinsInput.value = DEFAULT_ROOM_CONFIG.initialCoins;
   els.baseBetInput.value = DEFAULT_ROOM_CONFIG.baseBet;
   els.bonusInput.value = DEFAULT_ROOM_CONFIG.bonus;
   els.betOptionsInput.value = DEFAULT_ROOM_CONFIG.betOptions.join('/');
@@ -577,30 +586,54 @@ function applyDefaultConfig() {
 
 function renderAvatarPicker() {
   if (!els.avatarPicker) return;
+  const currentPlayer = getCurrentPlayer();
+  const selectedKey = normalizeAvatarKey(currentPlayer?.avatarUrl);
+  const avatarOptions = Array.isArray(state.room?.avatarOptions) ? state.room.avatarOptions : [];
+  const optionsByKey = new Map(avatarOptions.map((option) => [option.key, option]));
+  const locked = state.room?.status !== 'lobby';
+
   els.avatarPicker.innerHTML = '';
   ZODIAC_AVATARS.forEach((avatar) => {
+    const option = optionsByKey.get(avatar.key) || { disabled: false, selectedByPlayerId: '' };
+    const disabled = locked || Boolean(option.disabled);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'avatar-option';
     button.dataset.avatar = avatar.key;
+    button.disabled = disabled;
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-label', avatar.label);
-    button.setAttribute('aria-checked', avatar.key === state.avatarUrl ? 'true' : 'false');
-    if (avatar.key === state.avatarUrl) button.classList.add('is-selected');
+    button.setAttribute('aria-checked', avatar.key === selectedKey ? 'true' : 'false');
+    if (avatar.key === selectedKey) button.classList.add('is-selected');
+    if (disabled) {
+      button.classList.add('is-taken');
+      button.title = locked ? '本手开始后不能更换头像。' : '这个头像已被选择。';
+    }
     button.innerHTML = `${avatarMarkup(avatar.key)}<span>${avatar.label}</span>`;
     els.avatarPicker.appendChild(button);
   });
 }
 
+function syncSelectedAvatar() {
+  if (!state.room || !state.playerId) return;
+  const player = getCurrentPlayer();
+  if (!player) return;
+  const assignedAvatar = normalizeAvatarKey(player.avatarUrl);
+  if (assignedAvatar === state.avatarUrl) return;
+  state.avatarUrl = assignedAvatar;
+  if (state.avatarUrl) localStorage.setItem('avatarUrl', state.avatarUrl);
+}
+
 function normalizeAvatarKey(value) {
   const raw = String(value || '');
   const matched = ZODIAC_AVATARS.find((avatar) => avatar.key === raw || avatar.legacy === raw || avatar.label === raw);
-  return matched ? matched.key : ZODIAC_AVATARS[0].key;
+  return matched ? matched.key : '';
 }
 
 function avatarMarkup(value) {
   const key = normalizeAvatarKey(value);
-  const avatar = ZODIAC_AVATARS.find((item) => item.key === key) || ZODIAC_AVATARS[0];
+  if (!key) return '<span class="avatar-placeholder">待选</span>';
+  const avatar = ZODIAC_AVATARS.find((item) => item.key === key);
   return `<img class="avatar-img" src="/avatars/${key}.png" alt="${avatar.label}">`;
 }
 
@@ -615,6 +648,7 @@ function parseBetOptions(value) {
 function normalizeRoom(room) {
   return Object.assign({}, room, {
     players: Array.isArray(room.players) ? room.players : [],
+    avatarOptions: Array.isArray(room.avatarOptions) ? room.avatarOptions : [],
     hand: room.hand ? normalizeHand(room.hand) : null,
   });
 }
@@ -642,7 +676,7 @@ function safeHand() {
 }
 
 function playerPayload() {
-  return { nickname: state.nickname || randomNickname(), avatarUrl: normalizeAvatarKey(state.avatarUrl) };
+  return { nickname: state.nickname || randomNickname() };
 }
 
 function isHost() {
@@ -651,6 +685,10 @@ function isHost() {
 
 function findPlayer(playerId) {
   return state.room && state.room.players ? state.room.players.find((player) => player.id === playerId) : null;
+}
+
+function getCurrentPlayer() {
+  return findPlayer(state.playerId);
 }
 
 function findPeekTarget() {

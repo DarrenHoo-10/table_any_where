@@ -101,6 +101,12 @@ function handleMessage(socket, message) {
     return;
   }
 
+  if (type === 'select_avatar') {
+    const result = manager.selectAvatar(socket.roomId, socket.playerId, payload.avatarUrl || payload.avatarKey);
+    broadcastRoom(result.room, 'room_state');
+    return;
+  }
+
   if (type === 'finish_game') {
     const room = manager.requireRoom(socket.roomId);
     const settlement = manager.finishGame(socket.roomId, socket.playerId);

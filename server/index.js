@@ -133,11 +133,13 @@ function handleMessage(socket, message) {
       result.privateMessages.forEach((message) => {
         sendToPlayer(message.privateTo, 'private_cards', {
           cards: message.privateCards,
-          targetPlayerId: message.peekTargetPlayerId || message.privateTo,
+          targetPlayerId: message.peekResultTargetPlayerId || message.peekTargetPlayerId || message.privateTo,
+          cardTargetPlayerId: message.peekTargetPlayerId || message.privateTo,
           requesterId: message.peekRequesterId,
           winnerId: message.winnerId,
           loserId: message.loserId,
           participantHands: message.participantHands,
+          participants: message.participants,
         });
       });
     }

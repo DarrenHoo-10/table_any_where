@@ -282,6 +282,7 @@ class RoomManager {
 
   requestPeekPlayer(room, playerId, targetPlayerId) {
     const hand = room.hand;
+    if (hand.activePlayerIds.length <= 2) throw new Error('只剩两名玩家时请直接开牌。');
     if (hand.peekUsedPlayerIds.includes(playerId)) throw new Error('本手牌已经照牌过一次。');
     if (!hand.activePlayerIds.includes(targetPlayerId)) throw new Error('只能照未弃牌玩家。');
     if (targetPlayerId === playerId) throw new Error('不能照自己的牌。');
@@ -343,24 +344,38 @@ class RoomManager {
       [playerId]: hand.hands[playerId].map(publicCard),
       [targetPlayerId]: hand.hands[targetPlayerId].map(publicCard),
     };
+    const participants = Object.fromEntries(
+      [playerId, targetPlayerId].map((participantId) => {
+        const participant = this.requirePlayer(room, participantId);
+        return [participantId, {
+          id: participant.id,
+          nickname: participant.nickname,
+          avatarUrl: participant.avatarUrl,
+        }];
+      })
+    );
     const privateMessages = [
       {
         privateTo: playerId,
         privateCards: hand.hands[targetPlayerId].map(publicCard),
         peekTargetPlayerId: targetPlayerId,
+        peekResultTargetPlayerId: targetPlayerId,
         peekRequesterId: playerId,
         winnerId,
         loserId,
         participantHands,
+        participants,
       },
       {
         privateTo: targetPlayerId,
         privateCards: hand.hands[playerId].map(publicCard),
         peekTargetPlayerId: playerId,
+        peekResultTargetPlayerId: targetPlayerId,
         peekRequesterId: playerId,
         winnerId,
         loserId,
         participantHands,
+        participants,
       },
     ];
 

@@ -70,6 +70,8 @@ const state = {
   avatarModalOpen: false,
   tableScene3d: null,
   roomCopyHintTimer: null,
+  turnWarningKey: '',
+  turnWarningAudioContext: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -494,10 +496,13 @@ function renderPlayers() {
     if ((hand.foldedPlayerIds || []).includes(player.id)) tags.push('弃牌');
     if ((hand.viewedPlayerIds || []).includes(player.id)) tags.push('已看');
     if (hand.currentTurnPlayerId === player.id) tags.push('行动');
+    const turnTimer = hand.currentTurnPlayerId === player.id ? formatTurnTimer(hand.turnDeadlineAt) : '';
+    const isTurnWarning = hand.currentTurnPlayerId === player.id && getTurnRemainingSeconds(hand.turnDeadlineAt) <= 15;
 
     item.innerHTML = `
       <div class="player-main">
         <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
+        <span class="turn-countdown${isTurnWarning ? ' is-warning' : ''}" data-turn-countdown="${escapeHtml(player.id)}" aria-live="polite" ${turnTimer ? '' : 'hidden'}>${turnTimer}</span>
         <div>
           <strong>${escapeHtml(player.nickname)}</strong>
           <span>${tags.join(' ')}</span>
@@ -742,7 +747,7 @@ function renderActions() {
 
   els.actions.appendChild(actionButton('弃牌', () => send('action', { type: 'fold' }), 'danger'));
   const peekTargets = findPeekTargets();
-  if (peekTargets.length) {
+  if (activeIds.length > 2 && peekTargets.length) {
     const peekButton = actionButton('照牌', () => {
       state.peekTargetModalOpen = true;
       render();
@@ -792,6 +797,7 @@ function renderPeekTargetModal() {
     && state.room.hand
     && hand.currentTurnPlayerId === state.playerId
     && activeIds.includes(state.playerId)
+    && activeIds.length > 2
     && viewedIds.includes(state.playerId)
     && !(hand.peekUsedPlayerIds || []).includes(state.playerId)
     && !hand.pendingPeekRequest;
@@ -835,9 +841,9 @@ function renderPeekResultModal() {
   els.peekResultBody.innerHTML = '';
   if (!state.peekResultModalOpen || !result) return;
 
-  const requester = findPlayer(result.requesterId);
-  const target = findPlayer(result.targetPlayerId);
-  const winner = findPlayer(result.winnerId);
+  const requester = findPeekResultPlayer(result, result.requesterId);
+  const target = findPeekResultPlayer(result, result.targetPlayerId);
+  const winner = findPeekResultPlayer(result, result.winnerId);
   const summary = document.createElement('p');
   summary.className = 'peek-result-summary';
   summary.textContent = `${requester ? requester.nickname : '发起方'} vs ${target ? target.nickname : '被照方'} · 胜者 ${winner ? winner.nickname : '玩家'}`;
@@ -846,7 +852,7 @@ function renderPeekResultModal() {
   [result.requesterId, result.targetPlayerId].forEach((playerId) => {
     const cards = result.participantHands[playerId];
     if (!Array.isArray(cards)) return;
-    const player = findPlayer(playerId);
+    const player = findPeekResultPlayer(result, playerId);
     const item = document.createElement('article');
     item.className = 'peek-result-hand';
     const label = document.createElement('p');
@@ -973,6 +979,7 @@ function clearRoomSession(status, options = {}) {
   state.peekTargetModalOpen = false;
   closePeekResultModal({ renderAfterClose: false });
   state.lastSession = null;
+  state.turnWarningKey = '';
   if (!options.keepLeaving) state.leavingRoom = false;
   state.status = status;
   localStorage.removeItem('lastRoomSession');
@@ -1230,7 +1237,12 @@ function findPeekTargets() {
   const hand = safeHand();
   const activeIds = hand.activePlayerIds || [];
   const viewedIds = hand.viewedPlayerIds || [];
+  if (activeIds.length <= 2) return [];
   return activeIds.filter((id) => id !== state.playerId && viewedIds.includes(id));
+}
+
+function findPeekResultPlayer(result, playerId) {
+  return (result.participants && result.participants[playerId]) || findPlayer(playerId);
 }
 
 function describeAction(payload) {
@@ -1250,16 +1262,67 @@ function describeAction(payload) {
 
 function renderTurnClock() {
   if (!state.room || !state.room.hand) return;
-  renderCurrentTurnText(safeHand());
+  const hand = safeHand();
+  renderCurrentTurnText(hand);
+  updatePlayerTurnCountdown(hand);
+  warnTurnCountdown(hand);
 }
 
 function formatTurnTimer(deadlineAt) {
-  if (!deadlineAt) return '';
-  const remaining = Math.max(0, Number(deadlineAt) - Date.now());
-  const totalSeconds = Math.ceil(remaining / 1000);
+  const totalSeconds = getTurnRemainingSeconds(deadlineAt);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function getTurnRemainingSeconds(deadlineAt) {
+  if (!deadlineAt) return 0;
+  const remaining = Math.max(0, Number(deadlineAt) - Date.now());
+  return Math.ceil(remaining / 1000);
+}
+
+function updatePlayerTurnCountdown(hand) {
+  const remainingSeconds = getTurnRemainingSeconds(hand.turnDeadlineAt);
+  const timer = formatTurnTimer(hand.turnDeadlineAt);
+  document.querySelectorAll('[data-turn-countdown]').forEach((element) => {
+    const active = element.dataset.turnCountdown === hand.currentTurnPlayerId && timer;
+    element.hidden = !active;
+    element.textContent = active ? timer : '';
+    element.classList.toggle('is-warning', active && remainingSeconds <= 15);
+  });
+}
+
+function warnTurnCountdown(hand) {
+  const remainingSeconds = getTurnRemainingSeconds(hand.turnDeadlineAt);
+  const warningKey = `${hand.id}:${hand.currentTurnPlayerId}:${hand.turnDeadlineAt}:${remainingSeconds}`;
+  if (!hand.currentTurnPlayerId || remainingSeconds > 15 || remainingSeconds <= 0 || state.turnWarningKey === warningKey) return;
+  state.turnWarningKey = warningKey;
+  playTurnWarningSound();
+}
+
+function playTurnWarningSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  if (!state.turnWarningAudioContext) state.turnWarningAudioContext = new AudioContextClass();
+  const context = state.turnWarningAudioContext;
+  if (context.state === 'suspended') context.resume().catch(() => {});
+
+  const startAt = context.currentTime + 0.01;
+  for (let index = 0; index < 3; index += 1) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const beepStart = startAt + index * 0.16;
+    const beepEnd = beepStart + 0.08;
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, beepStart);
+    gain.gain.setValueAtTime(0.0001, beepStart);
+    gain.gain.exponentialRampToValueAtTime(0.18, beepStart + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, beepEnd);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(beepStart);
+    oscillator.stop(beepEnd + 0.02);
+  }
 }
 
 function formatCoins(value) {

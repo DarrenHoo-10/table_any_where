@@ -353,6 +353,23 @@ test('current player leaving advances turn to the next active seat', () => {
   assert.equal(updatedRoom.hand.currentTurnPlayerId, tail.id);
 });
 
+test('folding the second player in a three-player hand advances to the third player', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 0 });
+  const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  startReadyHand(manager, room, host.id);
+  manager.handleAction(room.id, host.id, { type: 'bet', amount: 5 });
+  assert.equal(room.hand.currentTurnPlayerId, middle.id);
+
+  manager.handleAction(room.id, middle.id, { type: 'fold' });
+
+  assert.equal(room.status, 'playing');
+  assert.equal(room.hand.currentTurnPlayerId, tail.id);
+  assert.deepEqual(room.hand.activePlayerIds, [host.id, tail.id]);
+});
+
 test('expired turns fold the current player and advance to the next active seat', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom(

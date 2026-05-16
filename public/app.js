@@ -163,8 +163,7 @@ function bindEvents() {
   });
 
   els.createRoomBtn.addEventListener('click', () => {
-    state.leavingRoom = false;
-    state.status = '正在创建房间...';
+    beginNewRoomRequest('正在创建房间...');
     render();
     send('create_room', {
       player: playerPayload(),
@@ -178,8 +177,7 @@ function bindEvents() {
       toast('请输入房间号');
       return;
     }
-    state.leavingRoom = false;
-    state.status = '正在加入房间...';
+    beginNewRoomRequest('正在加入房间...');
     render();
     send('join_room', { roomId, player: playerPayload() });
   });
@@ -210,9 +208,7 @@ function bindEvents() {
   els.finishGameBtn.addEventListener('click', () => send('finish_game'));
   els.leaveRoomBtn.addEventListener('click', leaveRoom);
   els.backHomeBtn.addEventListener('click', () => {
-    state.room = null;
-    state.peekedCards = null;
-    state.status = '已返回首页';
+    clearRoomSession('已返回首页');
     render();
   });
 }
@@ -270,6 +266,7 @@ function handleMessage(message) {
 
   if (message.type === 'room_state') {
     if (state.leavingRoom) return;
+    if (!shouldAcceptRoomState(payload)) return;
     state.room = normalizeRoom(payload);
     state.roomId = state.room.id;
     syncSelectedAvatar();
@@ -766,6 +763,16 @@ function clearRoomSession(status, options = {}) {
   if (!options.keepLeaving) state.leavingRoom = false;
   state.status = status;
   localStorage.removeItem('lastRoomSession');
+}
+
+function beginNewRoomRequest(status) {
+  clearRoomSession(status);
+  state.leavingRoom = false;
+}
+
+function shouldAcceptRoomState(room) {
+  const roomId = String(room && room.id || '');
+  return Boolean(roomId && state.roomId && roomId === state.roomId);
 }
 
 async function copyTextToClipboard(text) {

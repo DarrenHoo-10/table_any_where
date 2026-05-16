@@ -145,8 +145,7 @@ class RoomManager {
         if (hand.activePlayerIds.length === 1) {
           this.settleHand(room, 'player_left');
         } else if (wasCurrentTurn) {
-          hand.currentTurnPlayerId = hand.activePlayerIds[currentIndex % hand.activePlayerIds.length];
-          this.resetTurnDeadline(room);
+          this.advanceTurnAfterRemovedPlayer(room, currentIndex);
         }
       }
     }
@@ -261,6 +260,7 @@ class RoomManager {
   fold(room, playerId) {
     const hand = room.hand;
     if (!hand.activePlayerIds.includes(playerId)) throw new Error('你已经弃牌。');
+    const currentIndex = hand.activePlayerIds.indexOf(playerId);
     hand.foldedPlayerIds.push(playerId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
     hand.actionLog.push({ type: 'fold', playerId, at: Date.now() });
@@ -268,7 +268,7 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'last_player');
     } else {
-      this.advanceTurn(room);
+      this.advanceTurnAfterRemovedPlayer(room, currentIndex);
     }
 
     return { room };
@@ -289,6 +289,7 @@ class RoomManager {
     const compareResult = compareHands(hand.hands[playerId], hand.hands[targetPlayerId], room.config.mode);
     const winnerId = compareResult > 0 ? playerId : targetPlayerId;
     const loserId = winnerId === playerId ? targetPlayerId : playerId;
+    const loserIndex = hand.activePlayerIds.indexOf(loserId);
     const privateMessages = [
       {
         privateTo: playerId,
@@ -308,6 +309,8 @@ class RoomManager {
 
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'mirror_card', [playerId, targetPlayerId]);
+    } else if (loserId === playerId) {
+      this.advanceTurnAfterRemovedPlayer(room, loserIndex);
     } else {
       this.advanceTurn(room);
     }
@@ -538,6 +541,14 @@ class RoomManager {
     this.resetTurnDeadline(room);
   }
 
+  advanceTurnAfterRemovedPlayer(room, removedIndex, now = Date.now()) {
+    const hand = room.hand;
+    if (!hand || hand.activePlayerIds.length === 0) return;
+    const nextIndex = removedIndex === -1 ? 0 : removedIndex % hand.activePlayerIds.length;
+    hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    this.resetTurnDeadline(room, now);
+  }
+
   expireCurrentTurn(roomId, now = Date.now()) {
     const room = this.requireRoom(roomId);
     const hand = room.hand;
@@ -558,9 +569,7 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'action_timeout');
     } else {
-      const nextIndex = currentIndex % hand.activePlayerIds.length;
-      hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
-      this.resetTurnDeadline(room, now);
+      this.advanceTurnAfterRemovedPlayer(room, currentIndex, now);
     }
 
     return { room, playerId };

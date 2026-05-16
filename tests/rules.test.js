@@ -370,6 +370,21 @@ test('folding the second player in a three-player hand advances to the third pla
   assert.deepEqual(room.hand.activePlayerIds, [host.id, tail.id]);
 });
 
+test('fold turn advancement follows the seat ring instead of active id array order', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 0 });
+  const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  startReadyHand(manager, room, host.id);
+  room.hand.currentTurnPlayerId = middle.id;
+  room.hand.activePlayerIds = [middle.id, host.id, tail.id];
+
+  manager.handleAction(room.id, middle.id, { type: 'fold' });
+
+  assert.equal(room.hand.currentTurnPlayerId, tail.id);
+});
+
 test('expired turns fold the current player and advance to the next active seat', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom(

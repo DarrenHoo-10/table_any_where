@@ -136,7 +136,6 @@ class RoomManager {
     if (room.status === 'playing') {
       const hand = room.hand;
       if (hand && hand.activePlayerIds.includes(playerId)) {
-        const currentIndex = hand.activePlayerIds.indexOf(playerId);
         const wasCurrentTurn = hand.currentTurnPlayerId === playerId;
         hand.foldedPlayerIds.push(playerId);
         hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
@@ -145,7 +144,7 @@ class RoomManager {
         if (hand.activePlayerIds.length === 1) {
           this.settleHand(room, 'player_left');
         } else if (wasCurrentTurn) {
-          this.advanceTurnAfterRemovedPlayer(room, currentIndex);
+          this.advanceTurnAfterPlayer(room, playerId);
         }
       }
     }
@@ -260,7 +259,6 @@ class RoomManager {
   fold(room, playerId) {
     const hand = room.hand;
     if (!hand.activePlayerIds.includes(playerId)) throw new Error('你已经弃牌。');
-    const currentIndex = hand.activePlayerIds.indexOf(playerId);
     hand.foldedPlayerIds.push(playerId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
     hand.actionLog.push({ type: 'fold', playerId, at: Date.now() });
@@ -268,7 +266,7 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'last_player');
     } else {
-      this.advanceTurnAfterRemovedPlayer(room, currentIndex);
+      this.advanceTurnAfterPlayer(room, playerId);
     }
 
     return { room };
@@ -289,7 +287,6 @@ class RoomManager {
     const compareResult = compareHands(hand.hands[playerId], hand.hands[targetPlayerId], room.config.mode);
     const winnerId = compareResult > 0 ? playerId : targetPlayerId;
     const loserId = winnerId === playerId ? targetPlayerId : playerId;
-    const loserIndex = hand.activePlayerIds.indexOf(loserId);
     const privateMessages = [
       {
         privateTo: playerId,
@@ -310,7 +307,7 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'mirror_card', [playerId, targetPlayerId]);
     } else if (loserId === playerId) {
-      this.advanceTurnAfterRemovedPlayer(room, loserIndex);
+      this.advanceTurnAfterPlayer(room, loserId);
     } else {
       this.advanceTurn(room);
     }
@@ -535,18 +532,52 @@ class RoomManager {
   advanceTurn(room) {
     const hand = room.hand;
     if (!hand || hand.activePlayerIds.length === 0) return;
-    const currentIndex = hand.activePlayerIds.indexOf(hand.currentTurnPlayerId);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % hand.activePlayerIds.length;
-    hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    const nextPlayerId = this.findNextActivePlayerId(room, hand.currentTurnPlayerId);
+    if (!nextPlayerId) return;
+    hand.currentTurnPlayerId = nextPlayerId;
     this.resetTurnDeadline(room);
   }
 
-  advanceTurnAfterRemovedPlayer(room, removedIndex, now = Date.now()) {
+  advanceTurnAfterPlayer(room, playerId, now = Date.now()) {
     const hand = room.hand;
     if (!hand || hand.activePlayerIds.length === 0) return;
-    const nextIndex = removedIndex === -1 ? 0 : removedIndex % hand.activePlayerIds.length;
-    hand.currentTurnPlayerId = hand.activePlayerIds[nextIndex];
+    const nextPlayerId = this.findNextActivePlayerId(room, playerId);
+    if (!nextPlayerId) return;
+    hand.currentTurnPlayerId = nextPlayerId;
     this.resetTurnDeadline(room, now);
+  }
+
+  findNextActivePlayerId(room, playerId) {
+    const hand = room.hand;
+    if (!hand || hand.activePlayerIds.length === 0) return '';
+    const activeIds = new Set(hand.activePlayerIds);
+    const ring = this.createSeatRing(room);
+    if (!ring.length) return hand.activePlayerIds[0] || '';
+
+    const start = ring.find((node) => node.playerId === playerId)
+      || ring.find((node) => node.playerId === hand.currentTurnPlayerId)
+      || ring[0];
+    let node = start.next;
+
+    for (let steps = 0; steps < ring.length; steps += 1) {
+      if (activeIds.has(node.playerId)) return node.playerId;
+      node = node.next;
+    }
+
+    return '';
+  }
+
+  createSeatRing(room) {
+    const ring = room.players
+      .slice()
+      .sort((a, b) => a.seat - b.seat)
+      .map((player) => ({ playerId: player.id, next: null }));
+
+    ring.forEach((node, index) => {
+      node.next = ring[(index + 1) % ring.length] || null;
+    });
+
+    return ring;
   }
 
   expireCurrentTurn(roomId, now = Date.now()) {
@@ -561,7 +592,6 @@ class RoomManager {
       return null;
     }
 
-    const currentIndex = hand.activePlayerIds.indexOf(playerId);
     hand.foldedPlayerIds.push(playerId);
     hand.activePlayerIds = hand.activePlayerIds.filter((id) => id !== playerId);
     hand.actionLog.push({ type: 'timeout_fold', playerId, at: now });
@@ -569,7 +599,7 @@ class RoomManager {
     if (hand.activePlayerIds.length === 1) {
       this.settleHand(room, 'action_timeout');
     } else {
-      this.advanceTurnAfterRemovedPlayer(room, currentIndex, now);
+      this.advanceTurnAfterPlayer(room, playerId, now);
     }
 
     return { room, playerId };

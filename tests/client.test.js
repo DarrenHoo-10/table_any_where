@@ -148,6 +148,17 @@ test('final settlement ranking shows principal, balance, and colored profit loss
   assert.match(css, /\.ranking-list b\.is-loss/);
 });
 
+test('mid-hand joiners are shown as waiting instead of folded', () => {
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const renderPlayersBlock = getFunctionBlock(appJs, 'renderPlayers');
+  const renderActionsBlock = getFunctionBlock(appJs, 'renderActions');
+  const renderAvatarPickerBlock = getFunctionBlock(appJs, 'renderAvatarPicker');
+
+  assert.match(renderPlayersBlock, /等待下手/);
+  assert.match(renderActionsBlock, /你正在旁观，等待下一手/);
+  assert.match(renderAvatarPickerBlock, /state\.room\?\.status !== 'lobby' && Boolean\(selectedKey\)/);
+});
+
 function getCssBlock(css, selector) {
   const start = css.indexOf(`${selector} {`);
   if (start === -1) return '';

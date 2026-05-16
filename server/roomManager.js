@@ -90,7 +90,7 @@ class RoomManager {
 
   joinRoom(roomId, playerInfo) {
     const room = this.requireRoom(roomId);
-    if (room.status !== 'lobby') throw new Error('牌局已经开始，不能加入。');
+    if (room.status === 'finished') throw new Error('房间已经结算，不能加入。');
     if (room.players.length >= room.config.maxPlayers) throw new Error('房间人数已满。');
 
     const player = createPlayer(playerInfo, room.config.initialCoins);
@@ -103,8 +103,11 @@ class RoomManager {
 
   selectAvatar(roomId, playerId, avatarKey) {
     const room = this.requireRoom(roomId);
-    if (room.status !== 'lobby') throw new Error('只能在开局前选择头像。');
+    if (room.status === 'finished') throw new Error('房间已经结算，不能选择头像。');
     const player = this.requirePlayer(room, playerId);
+    if (room.status !== 'lobby' && normalizeAvatarKey(player.avatarUrl)) {
+      throw new Error('本局开始后不能更换头像。');
+    }
     const normalizedAvatarKey = normalizeAvatarKey(avatarKey);
     if (!normalizedAvatarKey) throw new Error('请选择有效头像。');
     const takenByOther = room.players.find((item) => item.id !== playerId && item.avatarUrl === normalizedAvatarKey);
@@ -193,6 +196,7 @@ class RoomManager {
       id: createId('hand'),
       hands,
       pot,
+      dealtPlayerIds: playerIds.slice(),
       activePlayerIds: playerIds.slice(),
       foldedPlayerIds: [],
       viewedPlayerIds: [],
@@ -410,6 +414,8 @@ class RoomManager {
 
   settleHand(room, reason, revealedPlayerIds = []) {
     const hand = room.hand;
+    const dealtPlayerIds = this.getDealtPlayerIds(hand);
+    const dealtPlayerIdSet = new Set(dealtPlayerIds);
     const contenderIds = hand.activePlayerIds.slice();
     const winnerIds = contenderIds.length === 1
       ? contenderIds
@@ -425,12 +431,13 @@ class RoomManager {
     });
 
     const bonusTransfers = [];
-    const leopardPlayerIds = room.players
+    const handPlayers = room.players.filter((player) => dealtPlayerIdSet.has(player.id));
+    const leopardPlayerIds = handPlayers
       .filter((player) => evaluateHand(hand.hands[player.id], room.config.mode).type === 'triple')
       .map((player) => player.id);
 
     leopardPlayerIds.forEach((winnerId) => {
-      room.players.forEach((payer) => {
+      handPlayers.forEach((payer) => {
         if (payer.id === winnerId || room.config.bonus === 0) return;
         const receiver = this.requirePlayer(room, winnerId);
         payer.coins -= room.config.bonus;
@@ -450,7 +457,7 @@ class RoomManager {
 
     const capExceeded = room.players.some((player) => player.coins > MAX_COINS);
     const handSummaries = Object.fromEntries(
-      room.players.map((player) => [player.id, handSummary(hand.hands[player.id], room.config.mode)])
+      handPlayers.map((player) => [player.id, handSummary(hand.hands[player.id], room.config.mode)])
     );
 
     room.lastSettlement = {
@@ -521,6 +528,10 @@ class RoomManager {
 
   requireNoPendingPeek(room) {
     if (room.hand.pendingPeekRequest) throw new Error('正在等待照牌回应。');
+  }
+
+  getDealtPlayerIds(hand) {
+    return Array.isArray(hand.dealtPlayerIds) ? hand.dealtPlayerIds.slice() : Object.keys(hand.hands || {});
   }
 
   clearPendingPeekIfParticipant(hand, playerId) {
@@ -747,6 +758,7 @@ class RoomManager {
       turnStartedAt: hand.turnStartedAt,
       turnDeadlineAt: hand.turnDeadlineAt,
       activePlayerIds: hand.activePlayerIds.slice(),
+      dealtPlayerIds: this.getDealtPlayerIds(hand),
       foldedPlayerIds: hand.foldedPlayerIds.slice(),
       viewedPlayerIds: hand.viewedPlayerIds.slice(),
       peekUsedPlayerIds: hand.peekUsedPlayerIds.slice(),

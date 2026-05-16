@@ -169,6 +169,37 @@ test('players select unique zodiac avatars after entering the room', () => {
   assert.equal(room.status, 'playing');
 });
 
+test('players can join during a hand and wait until the next hand', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 50 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  manager.selectAvatar(room.id, host.id, 'rat');
+  manager.selectAvatar(room.id, guest.id, 'ox');
+  manager.startHand(room.id, host.id);
+  room.hand.hands[host.id] = [C('A'), C('A', 'H'), C('A', 'D')];
+  room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
+
+  const { player: late } = manager.joinRoom(room.id, { nickname: 'C' });
+  assert.equal(room.status, 'playing');
+  assert.equal(room.hand.activePlayerIds.includes(late.id), false);
+  assert.equal(room.hand.hands[late.id], undefined);
+  assert.equal(late.coins, 1000);
+  manager.selectAvatar(room.id, late.id, 'tiger');
+  assert.throws(() => manager.handleAction(room.id, late.id, { type: 'view_self' }), /弃牌后不能看牌/);
+
+  manager.handleAction(room.id, host.id, { type: 'showdown', amount: 5 });
+
+  assert.equal(room.status, 'between_hands');
+  assert.equal(room.lastSettlement.hands[late.id], undefined);
+  assert.equal(room.lastSettlement.afterCoins[late.id], 1000);
+  assert.equal(room.lastSettlement.bonusTransfers.some((transfer) => transfer.fromPlayerId === late.id), false);
+
+  manager.startHand(room.id, host.id);
+  assert.equal(room.hand.activePlayerIds.includes(late.id), true);
+  assert.equal(room.hand.hands[late.id].length, 3);
+});
+
 test('mirror-card requires consent, compares hands, and reveals the result to both players', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: '房主' }, { maxPlayers: 3 });

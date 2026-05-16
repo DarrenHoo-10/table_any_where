@@ -31,6 +31,7 @@ const state = {
   lastSession: loadJson('lastRoomSession'),
   status: '未连接',
   peekedCards: null,
+  leavingRoom: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -88,6 +89,7 @@ function bindEvents() {
   });
 
   els.createRoomBtn.addEventListener('click', () => {
+    state.leavingRoom = false;
     state.status = '正在创建房间...';
     render();
     send('create_room', {
@@ -102,6 +104,7 @@ function bindEvents() {
       toast('请输入房间号');
       return;
     }
+    state.leavingRoom = false;
     state.status = '正在加入房间...';
     render();
     send('join_room', { roomId, player: playerPayload() });
@@ -109,11 +112,10 @@ function bindEvents() {
 
   els.copyRoomBtn.addEventListener('click', async () => {
     if (!state.room) return;
-    try {
-      await navigator.clipboard.writeText(state.room.id);
+    if (await copyTextToClipboard(state.room.id)) {
       toast('房间号已复制');
-    } catch (error) {
-      toast(`房间号：${state.room.id}`);
+    } else {
+      toast(`复制失败，房间号：${state.room.id}`);
     }
   });
 
@@ -172,6 +174,7 @@ function handleMessage(message) {
   const payload = message.payload || {};
 
   if (message.type === 'welcome') {
+    state.leavingRoom = false;
     state.roomId = payload.roomId;
     state.playerId = payload.playerId;
     state.playerToken = payload.playerToken;
@@ -180,6 +183,7 @@ function handleMessage(message) {
   }
 
   if (message.type === 'room_state') {
+    if (state.leavingRoom) return;
     state.room = normalizeRoom(payload);
     state.roomId = state.room.id;
     if (!state.room.hand) state.peekedCards = null;
@@ -218,14 +222,7 @@ function handleMessage(message) {
   }
 
   if (message.type === 'left_room') {
-    state.room = null;
-    state.roomId = '';
-    state.playerId = '';
-    state.playerToken = '';
-    state.peekedCards = null;
-    state.lastSession = null;
-    state.status = '已离开房间';
-    localStorage.removeItem('lastRoomSession');
+    clearRoomSession('已离开房间');
   }
 
   if (message.type === 'error') {
@@ -240,9 +237,10 @@ function send(type, payload = {}) {
   connect();
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
     toast('连接还没准备好，请稍后再试');
-    return;
+    return false;
   }
   state.ws.send(JSON.stringify({ type, payload }));
+  return true;
 }
 
 function render() {
@@ -470,7 +468,54 @@ function actionNote(text) {
 }
 
 function leaveRoom() {
+  state.leavingRoom = true;
   send('leave_room');
+  clearRoomSession('已离开房间', { keepLeaving: true });
+  render();
+}
+
+function clearRoomSession(status, options = {}) {
+  state.room = null;
+  state.roomId = '';
+  state.playerId = '';
+  state.playerToken = '';
+  state.peekedCards = null;
+  state.lastSession = null;
+  if (!options.keepLeaving) state.leavingRoom = false;
+  state.status = status;
+  localStorage.removeItem('lastRoomSession');
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || '');
+  if (!value) return false;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (error) {
+      // Fall through to the selection-based copy path for restricted browsers.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.left = '-1000px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    return document.execCommand('copy');
+  } catch (error) {
+    return false;
+  } finally {
+    textarea.remove();
+  }
 }
 
 function readRoomConfig() {

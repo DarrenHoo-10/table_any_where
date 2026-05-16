@@ -590,38 +590,184 @@ select:focus {
 }
 
 .playing-card {
+  position: relative;
   display: grid;
-  width: 64px;
-  height: 92px;
-  align-content: start;
-  gap: 10px;
+  width: 68px;
+  height: 96px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(32, 28, 21, 0.2);
   border-radius: 12px;
-  padding: 10px;
-  background: #fff7e8;
-  color: #161f22;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+  padding: 7px;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(255, 255, 255, 0.84), transparent 18px),
+    linear-gradient(145deg, #fffdf6 0%, #f5ead7 56%, #e4d4b9 100%);
+  color: #182027;
+  box-shadow:
+    0 13px 24px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.76);
+  transform: translateZ(0);
 }
 
-.playing-card span {
-  font-size: 19px;
-  font-weight: 900;
+.playing-card::before,
+.playing-card::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
 }
 
-.playing-card b {
-  font-size: 24px;
+.playing-card::before {
+  inset: 5px;
+  z-index: 0;
+  border: 1px solid rgba(181, 138, 47, 0.42);
+  border-radius: 9px;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(181, 138, 47, 0.16) 47% 53%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, rgba(181, 138, 47, 0.12) 47% 53%, transparent 53%);
+}
+
+.playing-card::after {
+  inset: 12px;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(181, 138, 47, 0.18), transparent 66%);
 }
 
 .playing-card.is-red {
   color: #b52d37;
 }
 
-.playing-card.is-back {
+.card-corner,
+.card-center {
+  position: relative;
+  z-index: 1;
+}
+
+.card-corner {
+  position: absolute;
+  display: grid;
+  gap: 0;
+  min-width: 18px;
+  justify-items: center;
+  line-height: 0.95;
+}
+
+.card-corner-top {
+  top: 9px;
+  left: 9px;
+}
+
+.card-corner-bottom {
+  right: 9px;
+  bottom: 9px;
+  transform: rotate(180deg);
+}
+
+.card-rank {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.card-suit {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.card-center {
+  display: grid;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  align-content: center;
+  border: 1px solid rgba(181, 138, 47, 0.26);
+  border-radius: 50%;
   background:
-    linear-gradient(135deg, rgba(245, 215, 125, 0.22), transparent),
-    #12353f;
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.74), transparent 24px),
+    rgba(255, 248, 226, 0.34);
+  box-shadow: inset 0 0 0 4px rgba(255, 248, 226, 0.24);
+}
+
+.card-center-suit {
+  margin-top: -2px;
+  font-size: 31px;
+  font-weight: 900;
+  line-height: 1;
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.55));
+}
+
+.card-center-rank {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  color: rgba(24, 32, 39, 0.42);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.playing-card.is-red .card-center-rank {
+  color: rgba(181, 45, 55, 0.42);
+}
+
+.playing-card.is-back {
+  border-color: rgba(245, 215, 125, 0.42);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(245, 215, 125, 0.2), transparent 29px),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(-45deg, rgba(245, 215, 125, 0.08) 0 1px, transparent 1px 8px),
+    linear-gradient(145deg, #143e45 0%, #0d2834 58%, #071d25 100%);
   color: var(--ink);
+  box-shadow:
+    0 13px 24px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(255, 248, 226, 0.12);
+}
+
+.playing-card.is-back::before {
+  inset: 7px;
+  border-color: rgba(245, 215, 125, 0.5);
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(245, 215, 125, 0.16) 46% 54%, transparent 54%),
+    linear-gradient(0deg, transparent 46%, rgba(245, 215, 125, 0.16) 46% 54%, transparent 54%),
+    radial-gradient(circle at 50% 50%, transparent 0 15px, rgba(245, 215, 125, 0.18) 16px 17px, transparent 18px);
+}
+
+.playing-card.is-back::after {
+  inset: 14px;
+  border: 1px solid rgba(245, 215, 125, 0.28);
+  border-radius: 50%;
+  background:
+    conic-gradient(from 45deg, rgba(245, 215, 125, 0.18), transparent 18%, rgba(245, 215, 125, 0.18) 25%, transparent 43%, rgba(245, 215, 125, 0.18) 50%, transparent 68%, rgba(245, 215, 125, 0.18) 75%, transparent 93%, rgba(245, 215, 125, 0.18));
+}
+
+.card-back-emblem {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(245, 215, 125, 0.52);
+  border-radius: 50%;
+  background: rgba(5, 20, 24, 0.62);
+  box-shadow:
+    0 0 0 4px rgba(245, 215, 125, 0.08),
+    inset 0 0 16px rgba(245, 215, 125, 0.12);
+}
+
+.card-back-suit {
+  color: rgba(255, 248, 226, 0.9);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.card-back-monogram {
+  margin-top: -2px;
+  color: var(--gold);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .peek-zone p {
@@ -672,7 +818,62 @@ select:focus {
   width: 52px;
   height: 74px;
   border-radius: 10px;
-  padding: 8px;
+  padding: 6px;
+}
+
+.settlement-reveals .playing-card::before {
+  inset: 4px;
+  border-radius: 7px;
+}
+
+.settlement-reveals .playing-card::after {
+  inset: 10px;
+}
+
+.settlement-reveals .card-corner-top {
+  top: 7px;
+  left: 7px;
+}
+
+.settlement-reveals .card-corner-bottom {
+  right: 7px;
+  bottom: 7px;
+}
+
+.settlement-reveals .card-rank {
+  font-size: 12px;
+}
+
+.settlement-reveals .card-suit {
+  font-size: 10px;
+}
+
+.settlement-reveals .card-center {
+  width: 30px;
+  height: 30px;
+}
+
+.settlement-reveals .card-center-suit {
+  font-size: 22px;
+}
+
+.settlement-reveals .card-center-rank {
+  right: 4px;
+  bottom: 4px;
+  font-size: 9px;
+}
+
+.settlement-reveals .card-back-emblem {
+  width: 28px;
+  height: 28px;
+}
+
+.settlement-reveals .card-back-suit {
+  font-size: 14px;
+}
+
+.settlement-reveals .card-back-monogram {
+  font-size: 7px;
 }
 
 .round-actions {
@@ -910,5 +1111,42 @@ select:focus {
   .playing-card {
     width: 58px;
     height: 84px;
+  }
+
+  .card-row,
+  .is-small {
+    gap: 7px;
+  }
+
+  .card-corner-top {
+    top: 8px;
+    left: 8px;
+  }
+
+  .card-corner-bottom {
+    right: 8px;
+    bottom: 8px;
+  }
+
+  .card-rank {
+    font-size: 13px;
+  }
+
+  .card-suit {
+    font-size: 11px;
+  }
+
+  .card-center {
+    width: 35px;
+    height: 35px;
+  }
+
+  .card-center-suit {
+    font-size: 26px;
+  }
+
+  .card-back-emblem {
+    width: 32px;
+    height: 32px;
   }
 }

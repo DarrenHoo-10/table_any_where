@@ -463,11 +463,40 @@ function renderCards(container, cards) {
   for (let i = 0; i < 3; i += 1) {
     const card = cards && cards[i] ? cards[i] : null;
     const element = document.createElement('div');
-    element.className = card ? 'playing-card' : 'playing-card is-back';
+    element.className = card ? `playing-card suit-${card.suit}` : 'playing-card is-back';
     if (card && RED_SUITS[card.suit]) element.classList.add('is-red');
-    element.innerHTML = card ? `<span>${card.rank}</span><b>${SUITS[card.suit] || card.suit}</b>` : '<span>?</span>';
+    element.setAttribute('aria-label', card ? `${card.rank}${SUITS[card.suit] || card.suit}` : '暗牌');
+    element.innerHTML = card ? cardFaceMarkup(card) : cardBackMarkup();
     container.appendChild(element);
   }
+}
+
+function cardFaceMarkup(card) {
+  const rank = escapeHtml(card.rank);
+  const suit = escapeHtml(SUITS[card.suit] || card.suit);
+  return `
+    <span class="card-corner card-corner-top">
+      <span class="card-rank">${rank}</span>
+      <span class="card-suit">${suit}</span>
+    </span>
+    <span class="card-center" aria-hidden="true">
+      <span class="card-center-suit">${suit}</span>
+      <span class="card-center-rank">${rank}</span>
+    </span>
+    <span class="card-corner card-corner-bottom">
+      <span class="card-rank">${rank}</span>
+      <span class="card-suit">${suit}</span>
+    </span>
+  `;
+}
+
+function cardBackMarkup() {
+  return `
+    <span class="card-back-emblem" aria-hidden="true">
+      <span class="card-back-suit">♠</span>
+      <span class="card-back-monogram">SFG</span>
+    </span>
+  `;
 }
 
 function renderPeekedCards() {

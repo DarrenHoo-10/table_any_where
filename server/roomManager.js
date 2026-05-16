@@ -416,7 +416,7 @@ class RoomManager {
           amount,
           cost: this.getActionCost(room, playerId, amount),
           disabled: true,
-          reason: `下注金额低于当前需要的 ${Math.ceil(minimum)}。`,
+          reason: `下注金额低于当前需要的 ${minimum}。`,
         };
       }
       if (!this.hasViewed(room, playerId) && !this.canOpenPlayerCallBlindBet(room, amount)) {
@@ -439,8 +439,20 @@ class RoomManager {
     const hand = room.hand;
     if (!hand || !hand.currentBet) return room.config.baseBet;
 
-    const currentLevel = hand.currentBet.viewed ? hand.currentBet.amount / 2 : hand.currentBet.amount;
-    return this.hasViewed(room, playerId) ? currentLevel * 2 : currentLevel;
+    const currentIndex = this.getBetOptionIndex(room, hand.currentBet.amount);
+    const playerViewed = this.hasViewed(room, playerId);
+    if (playerViewed === hand.currentBet.viewed) return hand.currentBet.amount;
+    if (hand.currentBet.viewed && !playerViewed) {
+      return room.config.betOptions[Math.max(0, currentIndex - 1)];
+    }
+    return room.config.betOptions[Math.min(room.config.betOptions.length - 1, currentIndex + 1)];
+  }
+
+  getBetOptionIndex(room, amount) {
+    const exactIndex = room.config.betOptions.indexOf(amount);
+    if (exactIndex !== -1) return exactIndex;
+    const nextIndex = room.config.betOptions.findIndex((option) => option >= amount);
+    return nextIndex === -1 ? room.config.betOptions.length - 1 : nextIndex;
   }
 
   canOpenPlayerCallBlindBet(room, amount) {

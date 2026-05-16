@@ -111,6 +111,37 @@ test('bet options enforce open and blind relative call levels', () => {
   assert.equal(hostBefore - host.coins, 20);
 });
 
+test('open and blind calls use adjacent bet option levels', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom(
+    { nickname: 'A' },
+    { maxPlayers: 2, betOptions: [5, 10, 20, 50] }
+  );
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  manager.startHand(room.id, host.id);
+  manager.handleAction(room.id, host.id, { type: 'view_self' });
+  manager.handleAction(room.id, host.id, { type: 'bet', amount: 50 });
+
+  assert.throws(
+    () => manager.handleAction(room.id, guest.id, { type: 'bet', amount: 10 }),
+    /低于当前需要/
+  );
+
+  const guestBefore = guest.coins;
+  manager.handleAction(room.id, guest.id, { type: 'bet', amount: 20 });
+  assert.equal(guestBefore - guest.coins, 20);
+
+  assert.throws(
+    () => manager.handleAction(room.id, host.id, { type: 'bet', amount: 20 }),
+    /低于当前需要/
+  );
+
+  const hostBefore = host.coins;
+  manager.handleAction(room.id, host.id, { type: 'bet', amount: 50 });
+  assert.equal(hostBefore - host.coins, 50);
+});
+
 test('blind players cannot choose a level above the highest callable open level', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom(

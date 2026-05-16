@@ -111,18 +111,27 @@ test('turn clock updates timer text without rebuilding the 3d scene', () => {
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
   const renderHandBlock = getFunctionBlock(appJs, 'renderHand');
   const renderTurnClockBlock = getFunctionBlock(appJs, 'renderTurnClock');
+  const renderPlayersBlock = getFunctionBlock(appJs, 'renderPlayers');
   const warnTurnCountdownBlock = getFunctionBlock(appJs, 'warnTurnCountdown');
+  const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
 
   assert.match(renderHandBlock, /renderCurrentTurnText\(hand\);/);
+  assert.match(renderPlayersBlock, /player-avatar-wrap/);
+  assert.match(renderPlayersBlock, /aria-label="行动倒计时"/);
+  assert.match(renderPlayersBlock, /\$\{turnTimer \? `<span class="turn-countdown/);
   assert.match(renderTurnClockBlock, /const hand = safeHand\(\);/);
   assert.match(renderTurnClockBlock, /renderCurrentTurnText\(hand\);/);
   assert.match(renderTurnClockBlock, /updatePlayerTurnCountdown\(hand\);/);
   assert.match(renderTurnClockBlock, /warnTurnCountdown\(hand\);/);
+  assert.match(appJs, /element\.dataset\.turnCountdown !== hand\.currentTurnPlayerId/);
+  assert.match(appJs, /element\.remove\(\);/);
   assert.match(warnTurnCountdownBlock, /turnDeadlineAt\}:\$\{remainingSeconds\}/);
   assert.match(warnTurnCountdownBlock, /playTurnWarningSound\(\);/);
   assert.equal(warnTurnCountdownBlock.includes('toast('), false);
   assert.match(appJs, /function playTurnWarningSound\(\)/);
   assert.match(appJs, /for \(let index = 0; index < 3; index \+= 1\)/);
+  assert.match(css, /\.player-avatar-wrap/);
+  assert.match(css, /\.turn-countdown/);
   assert.equal(renderTurnClockBlock.includes('renderHand('), false);
   assert.equal(renderTurnClockBlock.includes('renderTableScene3d'), false);
 });

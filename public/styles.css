@@ -1231,6 +1231,13 @@ select:focus {
   gap: 10px;
 }
 
+.player-avatar-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .player-avatar {
   display: grid;
   width: 46px;

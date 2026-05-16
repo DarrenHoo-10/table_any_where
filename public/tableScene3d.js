@@ -48,6 +48,7 @@ class TableScene3D {
     this.yaw = -0.42;
     this.pitch = 0.88;
     this.distance = 7.9;
+    this.cameraSeatKey = '';
     this.lastHandId = '';
     this.lastSettlementAt = 0;
     this.potCollectAnimation = null;
@@ -253,6 +254,7 @@ class TableScene3D {
 
     const players = Array.isArray(snapshot.players) ? snapshot.players : [];
     const config = snapshot.room.config || {};
+    this.alignCameraToViewerSeat(players, snapshot.viewerId);
     const settlement = snapshot.room.lastSettlement || null;
     if (settlement && settlement.settledAt && settlement.settledAt !== this.lastSettlementAt) {
       this.lastSettlementAt = settlement.settledAt;
@@ -351,6 +353,19 @@ class TableScene3D {
     this.potGroup.add(chips);
   }
 
+  alignCameraToViewerSeat(players, viewerId) {
+    const viewerIndex = players.findIndex((player) => player.id === viewerId);
+    if (viewerIndex < 0) return;
+
+    const seatKey = `${viewerId}:${viewerIndex}:${players.length}`;
+    if (seatKey === this.cameraSeatKey) return;
+    this.cameraSeatKey = seatKey;
+
+    const seat = seatPosition(viewerIndex, players.length, TABLE_RADIUS, 0.78);
+    const dir = new THREE.Vector3(seat.x, 0, seat.z).normalize();
+    this.yaw = Math.atan2(dir.x, dir.z);
+  }
+
   renderCards(players, hand, viewerId) {
     this.clearCards();
     if (!hand || !hand.id) return;
@@ -384,9 +399,7 @@ class TableScene3D {
         } else if (viewed) {
           mesh.position.copy(basePosition).addScaledVector(dir, -0.1);
           mesh.position.y = 0.78;
-          mesh.lookAt(0, 0.64, 0);
-          mesh.rotateY(Math.PI);
-          mesh.rotateZ((cardIndex - 1) * -0.08);
+          mesh.quaternion.copy(cardFrontQuaternion(dir));
         } else {
           mesh.position.copy(basePosition);
           mesh.rotation.set(-Math.PI / 2, 0, angle + (cardIndex - 1) * 0.08);
@@ -730,6 +743,14 @@ function disposeMaterial(material) {
     item.dispose();
     disposed.add(item);
   });
+}
+
+function cardFrontQuaternion(frontNormal) {
+  const zAxis = frontNormal.clone().normalize();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+  const matrix = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+  return new THREE.Quaternion().setFromRotationMatrix(matrix);
 }
 
 function roundRect(ctx, x, y, width, height, radius) {

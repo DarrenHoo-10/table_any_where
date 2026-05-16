@@ -118,6 +118,20 @@ test('turn clock updates timer text without rebuilding the 3d scene', () => {
   assert.equal(renderTurnClockBlock.includes('renderTableScene3d'), false);
 });
 
+test('new room requests clear stale saved sessions and ignore stale room states', () => {
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const createRoomBlock = getEventHandlerBlock(appJs, "els.createRoomBtn.addEventListener('click'");
+  const joinRoomBlock = getEventHandlerBlock(appJs, "els.joinRoomBtn.addEventListener('click'");
+  const backHomeBlock = getEventHandlerBlock(appJs, "els.backHomeBtn.addEventListener('click'");
+  const roomStateBlock = getMessageBranchBlock(appJs, "message.type === 'room_state'");
+
+  assert.match(createRoomBlock, /beginNewRoomRequest\('正在创建房间\.\.\.'\);/);
+  assert.match(joinRoomBlock, /beginNewRoomRequest\('正在加入房间\.\.\.'\);/);
+  assert.match(backHomeBlock, /clearRoomSession\('已返回首页'\);/);
+  assert.match(roomStateBlock, /if \(!shouldAcceptRoomState\(payload\)\) return;/);
+  assert.match(appJs, /function shouldAcceptRoomState\(room\)/);
+});
+
 function getCssBlock(css, selector) {
   const start = css.indexOf(`${selector} {`);
   if (start === -1) return '';
@@ -131,6 +145,14 @@ function getFunctionBlock(source, name) {
 
 function getMethodBlock(source, name) {
   return getBraceBlock(source, source.indexOf(`  ${name}(`));
+}
+
+function getEventHandlerBlock(source, marker) {
+  return getBraceBlock(source, source.indexOf(marker));
+}
+
+function getMessageBranchBlock(source, marker) {
+  return getBraceBlock(source, source.indexOf(marker));
 }
 
 function getBraceBlock(source, start) {

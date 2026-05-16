@@ -9,6 +9,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const manager = new RoomManager();
 const playerSockets = new Map();
+const roomTurnTimers = new Map();
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -96,12 +97,14 @@ function handleMessage(socket, message) {
     const room = manager.startHand(socket.roomId, socket.playerId);
     broadcastRoom(room, 'room_state');
     broadcastRoom(room, 'hand_state');
+    scheduleRoomTurnTimer(room);
     return;
   }
 
   if (type === 'finish_game') {
     const room = manager.requireRoom(socket.roomId);
     const settlement = manager.finishGame(socket.roomId, socket.playerId);
+    clearRoomTurnTimer(room.id);
     broadcastRoom(room, 'final_settlement', settlement);
     broadcastRoom(room, 'room_state');
     return;
@@ -134,15 +137,23 @@ function handleMessage(socket, message) {
     if (room.finalSettlement) broadcastRoom(room, 'final_settlement', room.finalSettlement);
     broadcastRoom(room, 'room_state');
     if (room.hand) broadcastRoom(room, 'hand_state');
+    scheduleRoomTurnTimer(room);
     return;
   }
 
   if (type === 'leave_room') {
+    const previousRoomId = socket.roomId;
     const room = manager.leaveRoom(socket.playerId);
     playerSockets.delete(socket.playerId);
     socket.playerId = null;
     socket.roomId = null;
     if (room) broadcastRoom(room, 'room_state');
+    if (room) {
+      if (room.hand) broadcastRoom(room, 'hand_state');
+      scheduleRoomTurnTimer(room);
+    } else {
+      clearRoomTurnTimer(previousRoomId);
+    }
     send(socket, 'left_room', {});
     return;
   }
@@ -217,6 +228,49 @@ function sendToPlayer(playerId, type, payload) {
 function send(socket, type, payload) {
   if (socket.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify({ type, payload }));
+}
+
+function scheduleRoomTurnTimer(room) {
+  clearRoomTurnTimer(room.id);
+  if (!room.hand || room.status !== 'playing' || !room.hand.turnDeadlineAt) return;
+
+  const delay = Math.max(0, room.hand.turnDeadlineAt - Date.now());
+  const timer = setTimeout(() => handleTurnTimeout(room.id), delay);
+  roomTurnTimers.set(room.id, timer);
+}
+
+function clearRoomTurnTimer(roomId) {
+  if (!roomId || !roomTurnTimers.has(roomId)) return;
+  clearTimeout(roomTurnTimers.get(roomId));
+  roomTurnTimers.delete(roomId);
+}
+
+function handleTurnTimeout(roomId) {
+  roomTurnTimers.delete(roomId);
+
+  let result = null;
+  try {
+    result = manager.expireCurrentTurn(roomId);
+  } catch (error) {
+    return;
+  }
+
+  if (!result) {
+    const room = manager.rooms.get(roomId);
+    if (room) scheduleRoomTurnTimer(room);
+    return;
+  }
+
+  const room = result.room;
+  broadcastRoom(room, 'action_result', {
+    playerId: result.playerId,
+    action: 'timeout_fold',
+  });
+  if (room.lastSettlement) broadcastRoom(room, 'hand_settlement', room.lastSettlement);
+  if (room.finalSettlement) broadcastRoom(room, 'final_settlement', room.finalSettlement);
+  broadcastRoom(room, 'room_state');
+  if (room.hand) broadcastRoom(room, 'hand_state');
+  scheduleRoomTurnTimer(room);
 }
 
 function sendJson(res, statusCode, data) {

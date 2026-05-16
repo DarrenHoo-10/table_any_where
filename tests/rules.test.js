@@ -55,6 +55,9 @@ test('normalizes room defaults conservatively', () => {
   assert.equal(normalizeConfig({ bonus: 0 }).bonus, 0);
   assert.equal(normalizeConfig({}).peekCost, 10);
   assert.equal(normalizeConfig({ peekCost: 0 }).peekCost, 0);
+  assert.equal(normalizeConfig({}).actionTimeoutSeconds, 180);
+  assert.equal(normalizeConfig({ actionTimeoutSeconds: 45 }).actionTimeoutSeconds, 45);
+  assert.equal(normalizeConfig({ actionTimeoutSeconds: 0 }).actionTimeoutSeconds, 10);
 });
 
 test('mirror-card compares hands, eliminates one player, and reveals cards to both players', () => {
@@ -243,6 +246,48 @@ test('current player leaving advances turn to the next active seat', () => {
   assert.equal(updatedRoom.hand.currentTurnPlayerId, tail.id);
 });
 
+test('expired turns fold the current player and advance to the next active seat', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom(
+    { nickname: 'A' },
+    { maxPlayers: 3, bonus: 0, actionTimeoutSeconds: 10 }
+  );
+  const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  manager.startHand(room.id, host.id, 1000);
+  assert.equal(room.hand.currentTurnPlayerId, host.id);
+  assert.equal(room.hand.turnDeadlineAt, 11000);
+
+  const result = manager.expireCurrentTurn(room.id, 11001);
+
+  assert.equal(result.playerId, host.id);
+  assert.equal(room.status, 'playing');
+  assert.equal(room.hand.currentTurnPlayerId, middle.id);
+  assert.equal(room.hand.turnDeadlineAt, 21001);
+  assert.deepEqual(room.hand.foldedPlayerIds, [host.id]);
+  assert.deepEqual(room.hand.activePlayerIds, [middle.id, tail.id]);
+});
+
+test('new hands start from the player after the previous winner in join order', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 0 });
+  const { player: middle } = manager.joinRoom(room.id, { nickname: 'B' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  manager.startHand(room.id, host.id);
+  room.hand.hands[host.id] = [C('2'), C('3', 'H'), C('4', 'D')];
+  room.hand.hands[middle.id] = [C('A'), C('A', 'H'), C('A', 'D')];
+  room.hand.hands[tail.id] = [C('K'), C('K', 'H'), C('K', 'D')];
+  manager.handleAction(room.id, host.id, { type: 'fold' });
+  manager.handleAction(room.id, middle.id, { type: 'showdown', amount: 5 });
+  assert.deepEqual(room.lastSettlement.winnerIds, [middle.id]);
+
+  manager.startHand(room.id, host.id);
+
+  assert.equal(room.hand.currentTurnPlayerId, tail.id);
+});
+
 test('settlement adds support coins for negative balances and triggers final settlement over cap', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2, bonus: 50 });
@@ -264,7 +309,7 @@ test('settlement adds support coins for negative balances and triggers final set
   manager.startHand(room.id, host.id);
   room.hand.hands[host.id] = [C('K'), C('K', 'H'), C('K', 'D')];
   room.hand.hands[guest.id] = [C('2'), C('3', 'H'), C('4', 'D')];
-  manager.handleAction(room.id, host.id, { type: 'showdown', amount: 20 });
+  manager.handleAction(room.id, guest.id, { type: 'showdown', amount: 20 });
 
   assert.equal(room.status, 'finished');
   assert.equal(room.finalSettlement.reason, 'coin_cap_exceeded');

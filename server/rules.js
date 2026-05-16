@@ -3,6 +3,9 @@ const MAX_COINS = 100000000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 12;
 const DOUBLE_DECK_THRESHOLD = 8;
+const DEFAULT_ACTION_TIMEOUT_SECONDS = 180;
+const MIN_ACTION_TIMEOUT_SECONDS = 10;
+const MAX_ACTION_TIMEOUT_SECONDS = 3600;
 
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SUITS = ['S', 'H', 'D', 'C'];
@@ -55,6 +58,11 @@ function normalizeConfig(input = {}) {
     baseBet: clampInt(input.baseBet ?? 5, 1, MAX_COINS),
     bonus: clampInt(input.bonus ?? 50, 0, MAX_COINS),
     peekCost: clampInt(input.peekCost ?? 10, 0, MAX_COINS),
+    actionTimeoutSeconds: clampInt(
+      input.actionTimeoutSeconds ?? DEFAULT_ACTION_TIMEOUT_SECONDS,
+      MIN_ACTION_TIMEOUT_SECONDS,
+      MAX_ACTION_TIMEOUT_SECONDS
+    ),
     betOptions: [...new Set(betOptions)].sort((a, b) => a - b),
   };
 }
@@ -232,10 +240,13 @@ function handSummary(cards, mode) {
 
 module.exports = {
   DOUBLE_DECK_THRESHOLD,
+  DEFAULT_ACTION_TIMEOUT_SECONDS,
   HAND_LABELS,
   INITIAL_COINS,
+  MAX_ACTION_TIMEOUT_SECONDS,
   MAX_COINS,
   MAX_PLAYERS,
+  MIN_ACTION_TIMEOUT_SECONDS,
   MIN_PLAYERS,
   MODE_RANKS,
   RANKS,

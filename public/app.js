@@ -4,7 +4,23 @@ const DEFAULT_ROOM_CONFIG = {
   baseBet: 5,
   bonus: 50,
   betOptions: [5, 10, 20, 50],
+  actionTimeoutSeconds: 180,
 };
+
+const ZODIAC_AVATARS = [
+  { key: 'rat', label: '鼠', legacy: '🐭' },
+  { key: 'ox', label: '牛', legacy: '🐮' },
+  { key: 'tiger', label: '虎', legacy: '🐯' },
+  { key: 'rabbit', label: '兔', legacy: '🐰' },
+  { key: 'dragon', label: '龙', legacy: '🐲' },
+  { key: 'snake', label: '蛇', legacy: '🐍' },
+  { key: 'horse', label: '马', legacy: '🐴' },
+  { key: 'goat', label: '羊', legacy: '🐐' },
+  { key: 'monkey', label: '猴', legacy: '🐵' },
+  { key: 'rooster', label: '鸡', legacy: '🐔' },
+  { key: 'dog', label: '狗', legacy: '🐶' },
+  { key: 'pig', label: '猪', legacy: '🐷' },
+];
 
 const MODE_LABELS = {
   zha_jing_hua: 'Flush',
@@ -28,6 +44,7 @@ const state = {
   playerToken: '',
   roomId: '',
   nickname: localStorage.getItem('nickname') || randomNickname(),
+  avatarUrl: normalizeAvatarKey(localStorage.getItem('avatarUrl')),
   lastSession: loadJson('lastRoomSession'),
   status: '未连接',
   peekedCards: null,
@@ -40,6 +57,7 @@ const els = {};
 [
   'app',
   'nicknameInput',
+  'avatarPicker',
   'createRoomBtn',
   'joinRoomBtn',
   'roomCodeInput',
@@ -68,6 +86,7 @@ const els = {};
   'baseBetInput',
   'bonusInput',
   'betOptionsInput',
+  'actionTimeoutInput',
 ].forEach((id) => {
   els[id] = $(id);
 });
@@ -76,9 +95,11 @@ init();
 
 function init() {
   if (els.nicknameInput) els.nicknameInput.value = state.nickname;
+  renderAvatarPicker();
   applyDefaultConfig();
   bindEvents();
   connect();
+  setInterval(renderTurnClock, 1000);
   render();
 }
 
@@ -86,6 +107,14 @@ function bindEvents() {
   els.nicknameInput.addEventListener('input', () => {
     state.nickname = els.nicknameInput.value.trim().slice(0, 16) || randomNickname();
     localStorage.setItem('nickname', state.nickname);
+  });
+
+  els.avatarPicker.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-avatar]');
+    if (!button) return;
+    state.avatarUrl = button.dataset.avatar;
+    localStorage.setItem('avatarUrl', state.avatarUrl);
+    renderAvatarPicker();
   });
 
   els.createRoomBtn.addEventListener('click', () => {
@@ -272,13 +301,14 @@ function renderViews() {
 function renderRoom() {
   els.roomCodeText.textContent = state.room.id || '-';
   const config = state.room.config || DEFAULT_ROOM_CONFIG;
-  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus}`;
+  const timeoutMinutes = Math.round((config.actionTimeoutSeconds || DEFAULT_ROOM_CONFIG.actionTimeoutSeconds) / 60);
+  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
 }
 
 function renderPlayers() {
-  const players = state.room.players || [];
+  const players = (state.room.players || []).slice().sort((a, b) => (a.seat || 0) - (b.seat || 0));
   const hand = safeHand();
   els.playerList.innerHTML = '';
 
@@ -288,7 +318,7 @@ function renderPlayers() {
     if (player.id === state.playerId) item.classList.add('is-me');
     if (hand.currentTurnPlayerId === player.id) item.classList.add('is-turn');
 
-    const tags = [];
+    const tags = [`顺序 ${player.seat}`];
     if (player.isHost) tags.push('房主');
     if (player.connected === false) tags.push('离线');
     if ((hand.foldedPlayerIds || []).includes(player.id)) tags.push('弃牌');
@@ -296,9 +326,12 @@ function renderPlayers() {
     if (hand.currentTurnPlayerId === player.id) tags.push('行动');
 
     item.innerHTML = `
-      <div>
-        <strong>${escapeHtml(player.nickname)}</strong>
-        <span>${tags.join(' ') || `座位 ${player.seat}`}</span>
+      <div class="player-main">
+        <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
+        <div>
+          <strong>${escapeHtml(player.nickname)}</strong>
+          <span>${tags.join(' ')}</span>
+        </div>
       </div>
       <b>${formatCoins(player.coins)}</b>
     `;
@@ -306,9 +339,9 @@ function renderPlayers() {
   });
 
   const host = isHost();
-  els.startHandBtn.hidden = !host;
-  els.startHandBtn.disabled = !host || players.length < 2 || !['lobby', 'between_hands'].includes(state.room.status);
-  els.continueHandBtn.hidden = !host;
+  els.startHandBtn.hidden = !host || state.room.status !== 'lobby';
+  els.startHandBtn.disabled = !host || players.length < 2 || state.room.status !== 'lobby';
+  els.continueHandBtn.hidden = !host || state.room.status !== 'between_hands';
   els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands';
   els.finishGameBtn.hidden = !host;
   els.finishGameBtn.disabled = !host || state.room.status === 'playing';
@@ -318,7 +351,8 @@ function renderHand() {
   const hand = safeHand();
   els.potText.textContent = formatCoins(hand.pot || 0);
   const current = findPlayer(hand.currentTurnPlayerId);
-  els.currentTurnText.textContent = current ? current.nickname : '-';
+  const timer = formatTurnTimer(hand.turnDeadlineAt);
+  els.currentTurnText.textContent = current ? `${current.nickname}${timer ? ` · ${timer}` : ''}` : '-';
   renderCards(els.myCards, hand.myCards);
   renderPeekedCards();
   renderActions();
@@ -528,6 +562,7 @@ function readRoomConfig() {
     baseBet: clampNumber(els.baseBetInput.value, 1, 100000000, DEFAULT_ROOM_CONFIG.baseBet),
     bonus: clampNumber(els.bonusInput.value, 0, 100000000, DEFAULT_ROOM_CONFIG.bonus),
     betOptions: parseBetOptions(els.betOptionsInput.value),
+    actionTimeoutSeconds: clampNumber(els.actionTimeoutInput.value, 1, 60, 3) * 60,
   };
 }
 
@@ -537,6 +572,36 @@ function applyDefaultConfig() {
   els.baseBetInput.value = DEFAULT_ROOM_CONFIG.baseBet;
   els.bonusInput.value = DEFAULT_ROOM_CONFIG.bonus;
   els.betOptionsInput.value = DEFAULT_ROOM_CONFIG.betOptions.join('/');
+  els.actionTimeoutInput.value = Math.round(DEFAULT_ROOM_CONFIG.actionTimeoutSeconds / 60);
+}
+
+function renderAvatarPicker() {
+  if (!els.avatarPicker) return;
+  els.avatarPicker.innerHTML = '';
+  ZODIAC_AVATARS.forEach((avatar) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'avatar-option';
+    button.dataset.avatar = avatar.key;
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-label', avatar.label);
+    button.setAttribute('aria-checked', avatar.key === state.avatarUrl ? 'true' : 'false');
+    if (avatar.key === state.avatarUrl) button.classList.add('is-selected');
+    button.innerHTML = `${avatarMarkup(avatar.key)}<span>${avatar.label}</span>`;
+    els.avatarPicker.appendChild(button);
+  });
+}
+
+function normalizeAvatarKey(value) {
+  const raw = String(value || '');
+  const matched = ZODIAC_AVATARS.find((avatar) => avatar.key === raw || avatar.legacy === raw || avatar.label === raw);
+  return matched ? matched.key : ZODIAC_AVATARS[0].key;
+}
+
+function avatarMarkup(value) {
+  const key = normalizeAvatarKey(value);
+  const avatar = ZODIAC_AVATARS.find((item) => item.key === key) || ZODIAC_AVATARS[0];
+  return `<img class="avatar-img" src="/avatars/${key}.png" alt="${avatar.label}">`;
 }
 
 function parseBetOptions(value) {
@@ -567,6 +632,8 @@ function normalizeHand(hand) {
     legalBetOptions: [],
     canShowdown: false,
     myCards: null,
+    turnStartedAt: null,
+    turnDeadlineAt: null,
   }, hand || {});
 }
 
@@ -575,7 +642,7 @@ function safeHand() {
 }
 
 function playerPayload() {
-  return { nickname: state.nickname || randomNickname(), avatarUrl: '' };
+  return { nickname: state.nickname || randomNickname(), avatarUrl: normalizeAvatarKey(state.avatarUrl) };
 }
 
 function isHost() {
@@ -602,8 +669,23 @@ function describeAction(payload) {
     view_self: '看牌',
     peek_player: '照牌',
     showdown: '开牌',
+    timeout_fold: '超时弃牌',
   };
   return `${name}${labels[payload.action] || '行动'}`;
+}
+
+function renderTurnClock() {
+  if (!state.room || !state.room.hand) return;
+  renderHand();
+}
+
+function formatTurnTimer(deadlineAt) {
+  if (!deadlineAt) return '';
+  const remaining = Math.max(0, Number(deadlineAt) - Date.now());
+  const totalSeconds = Math.ceil(remaining / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function formatCoins(value) {

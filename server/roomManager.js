@@ -285,6 +285,7 @@ class RoomManager {
     if (hand.peekUsedPlayerIds.includes(playerId)) throw new Error('本手牌已经照牌过一次。');
     if (!hand.activePlayerIds.includes(targetPlayerId)) throw new Error('只能照未弃牌玩家。');
     if (targetPlayerId === playerId) throw new Error('不能照自己的牌。');
+    if (!hand.viewedPlayerIds.includes(playerId)) throw new Error('看牌后才可以照牌。');
     if (!hand.viewedPlayerIds.includes(targetPlayerId)) throw new Error('只能照已经看过自己的牌的玩家。');
 
     const cost = this.getCurrentBetCost(room, playerId);

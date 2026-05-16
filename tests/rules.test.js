@@ -213,6 +213,11 @@ test('mirror-card requires consent, compares hands, and reveals the result to bo
   assert.equal(room.hand.pot, 15);
   assert.throws(
     () => manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id }),
+    /看牌后才可以照牌/
+  );
+  manager.handleAction(room.id, host.id, { type: 'view_self' });
+  assert.throws(
+    () => manager.handleAction(room.id, host.id, { type: 'peek_player', targetPlayerId: guest.id }),
     /已经看过自己的牌/
   );
   manager.handleAction(room.id, guest.id, { type: 'view_self' });
@@ -259,6 +264,7 @@ test('mirror-card refusal clears the request without charging or consuming the p
   const { player: guest } = manager.joinRoom(room.id, { nickname: '客人' });
 
   startReadyHand(manager, room, host.id);
+  manager.handleAction(room.id, host.id, { type: 'view_self' });
   manager.handleAction(room.id, guest.id, { type: 'view_self' });
   const before = host.coins;
 

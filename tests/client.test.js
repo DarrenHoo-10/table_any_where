@@ -159,6 +159,24 @@ test('mid-hand joiners are shown as waiting instead of folded', () => {
   assert.match(renderAvatarPickerBlock, /state\.room\?\.status !== 'lobby' && Boolean\(selectedKey\)/);
 });
 
+test('peek action uses target and result modals with auto-close notification', () => {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const renderActionsBlock = getFunctionBlock(appJs, 'renderActions');
+  const handleMessageBlock = getFunctionBlock(appJs, 'handleMessage');
+
+  assert.match(html, /id="peekTargetModal"/);
+  assert.match(html, /id="peekResultModal"/);
+  assert.match(renderActionsBlock, /actionButton\('照牌'/);
+  assert.equal(renderActionsBlock.includes('`照 ${target ? target.nickname'), false);
+  assert.match(renderActionsBlock, /看牌后才可以照牌/);
+  assert.match(handleMessageBlock, /state\.peekResultModalOpen = true;/);
+  assert.match(appJs, /function renderPeekTargetModal\(\)/);
+  assert.match(appJs, /function renderPeekResultModal\(\)/);
+  assert.match(appJs, /setTimeout\(\(\) => \{/);
+  assert.match(appJs, /}, 5000\);/);
+});
+
 function getCssBlock(css, selector) {
   const start = css.indexOf(`${selector} {`);
   if (start === -1) return '';

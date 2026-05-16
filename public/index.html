@@ -139,6 +139,28 @@
           </div>
         </section>
 
+        <section id="peekTargetModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekTargetModalTitle">
+            <div class="panel-title">
+              <h3 id="peekTargetModalTitle">选择照牌玩家</h3>
+              <span>对方也需要已看牌</span>
+            </div>
+            <div id="peekTargetOptions" class="peek-target-list"></div>
+            <button id="closePeekTargetModalBtn" class="ghost-btn wide-btn" type="button">取消</button>
+          </div>
+        </section>
+
+        <section id="peekResultModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekResultModalTitle">
+            <div class="panel-title">
+              <h3 id="peekResultModalTitle">照牌结果</h3>
+              <span>5 秒后自动关闭</span>
+            </div>
+            <div id="peekResultBody" class="peek-result-body"></div>
+            <button id="confirmPeekResultBtn" class="primary-btn wide-btn" type="button">确认</button>
+          </div>
+        </section>
+
         <section class="felt-table">
           <section id="tableScene3d" class="table-scene-3d" aria-label="3D 发牌桌">
             <div class="table-scene-status">加载 3D 牌桌...</div>

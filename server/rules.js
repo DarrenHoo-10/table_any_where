@@ -55,6 +55,7 @@ function normalizeConfig(input = {}) {
   return {
     mode: MODE_RANKS[input.mode] ? input.mode : 'zha_jing_hua',
     maxPlayers,
+    initialCoins: clampInt(input.initialCoins ?? INITIAL_COINS, 1, MAX_COINS),
     baseBet: clampInt(input.baseBet ?? 5, 1, MAX_COINS),
     bonus: clampInt(input.bonus ?? 50, 0, MAX_COINS),
     peekCost: clampInt(input.peekCost ?? 10, 0, MAX_COINS),

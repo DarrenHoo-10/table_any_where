@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 const {
-  INITIAL_COINS,
   MAX_COINS,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -14,6 +13,20 @@ const {
 } = require('./rules');
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ZODIAC_AVATAR_KEYS = [
+  'rat',
+  'ox',
+  'tiger',
+  'rabbit',
+  'dragon',
+  'snake',
+  'horse',
+  'goat',
+  'monkey',
+  'rooster',
+  'dog',
+  'pig',
+];
 
 function createId(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -27,13 +40,18 @@ function createRoomCode() {
   return code;
 }
 
-function createPlayer(info = {}) {
+function normalizeAvatarKey(value) {
+  const raw = String(value || '');
+  return ZODIAC_AVATAR_KEYS.includes(raw) ? raw : '';
+}
+
+function createPlayer(info = {}, initialCoins) {
   return {
     id: createId('player'),
     token: createId('token'),
     nickname: String(info.nickname || '玩家').slice(0, 16),
-    avatarUrl: String(info.avatarUrl || ''),
-    coins: INITIAL_COINS,
+    avatarUrl: '',
+    coins: initialCoins,
     connected: true,
     seat: 0,
   };
@@ -50,7 +68,7 @@ class RoomManager {
     let roomId = createRoomCode();
     while (this.rooms.has(roomId)) roomId = createRoomCode();
 
-    const host = createPlayer(playerInfo);
+    const host = createPlayer(playerInfo, config.initialCoins);
     host.seat = 1;
     const room = {
       id: roomId,
@@ -75,11 +93,23 @@ class RoomManager {
     if (room.status !== 'lobby') throw new Error('牌局已经开始，不能加入。');
     if (room.players.length >= room.config.maxPlayers) throw new Error('房间人数已满。');
 
-    const player = createPlayer(playerInfo);
+    const player = createPlayer(playerInfo, room.config.initialCoins);
     player.seat = room.players.length + 1;
     room.players.push(player);
     this.playerRoom.set(player.id, room.id);
 
+    return { room, player };
+  }
+
+  selectAvatar(roomId, playerId, avatarKey) {
+    const room = this.requireRoom(roomId);
+    if (room.status !== 'lobby') throw new Error('只能在开局前选择头像。');
+    const player = this.requirePlayer(room, playerId);
+    const normalizedAvatarKey = normalizeAvatarKey(avatarKey);
+    if (!normalizedAvatarKey) throw new Error('请选择有效头像。');
+    const takenByOther = room.players.find((item) => item.id !== playerId && item.avatarUrl === normalizedAvatarKey);
+    if (takenByOther) throw new Error('这个头像已被选择。');
+    player.avatarUrl = normalizedAvatarKey;
     return { room, player };
   }
 
@@ -144,6 +174,9 @@ class RoomManager {
     }
     if (room.players.length < MIN_PLAYERS) throw new Error('至少需要2名玩家。');
     if (room.players.length > MAX_PLAYERS) throw new Error('最多支持12名玩家。');
+    if (room.players.some((player) => !normalizeAvatarKey(player.avatarUrl))) {
+      throw new Error('所有玩家请选择头像后再开始发牌。');
+    }
     if (room.finalSettlement) throw new Error('房间已经结算。');
 
     const playerIds = room.players.map((player) => player.id);
@@ -334,7 +367,7 @@ class RoomManager {
     const hadNegative = room.players.some((player) => player.coins < 0);
     if (hadNegative) {
       room.players.forEach((player) => {
-        player.coins += INITIAL_COINS;
+        player.coins += room.config.initialCoins;
       });
     }
 
@@ -564,6 +597,7 @@ class RoomManager {
         seat: player.seat,
         isHost: player.id === room.hostId,
       })),
+      avatarOptions: this.serializeAvatarOptions(room, viewerId),
       hand: room.hand ? this.serializeHand(room, viewerId) : null,
       lastSettlement: room.lastSettlement,
       finalSettlement: room.finalSettlement,
@@ -589,6 +623,17 @@ class RoomManager {
         ? hand.hands[viewerId].map(publicCard)
         : null,
     };
+  }
+
+  serializeAvatarOptions(room, viewerId) {
+    return ZODIAC_AVATAR_KEYS.map((key) => {
+      const selectedBy = room.players.find((player) => player.avatarUrl === key);
+      return {
+        key,
+        disabled: Boolean(selectedBy && selectedBy.id !== viewerId),
+        selectedByPlayerId: selectedBy ? selectedBy.id : '',
+      };
+    });
   }
 }
 

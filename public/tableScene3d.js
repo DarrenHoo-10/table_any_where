@@ -10,6 +10,8 @@ const SUITS = {
 const RED_SUITS = new Set(['H', 'D']);
 const CARD_SIZE = { width: 0.42, height: 0.62 };
 const CARD_THICKNESS = 0.012;
+const TABLE_CARD_SPACING = 0.36;
+const VIEWED_CARD_SPACING = 0.18;
 const TABLE_RADIUS = 3.05;
 const LABEL_RADIUS = 4.15;
 const DEFAULT_CAMERA_PITCH = 0.62;
@@ -391,18 +393,18 @@ class TableScene3D {
       for (let cardIndex = 0; cardIndex < 3; cardIndex += 1) {
         const visibleCard = player.id === viewerId && myCards ? myCards[cardIndex] : null;
         const mesh = this.createCardMesh(visibleCard, !visibleCard);
-        const spread = (cardIndex - 1) * 0.36;
+        const spread = viewed ? (1 - cardIndex) * VIEWED_CARD_SPACING : (cardIndex - 1) * TABLE_CARD_SPACING;
         const basePosition = new THREE.Vector3(base.x, 0.42, base.z).addScaledVector(tangent, spread);
         const angle = Math.atan2(dir.x, dir.z);
 
-        if (folded) {
+        if (viewed) {
+          mesh.position.copy(basePosition).addScaledVector(dir, -0.1);
+          mesh.position.y = 0.78;
+          mesh.rotation.set(0, angle, 0);
+        } else if (folded) {
           mesh.position.copy(basePosition).addScaledVector(dir, -0.1);
           mesh.rotation.set(-Math.PI / 2, 0, angle + (cardIndex - 1) * 0.2);
           mesh.material.opacity = 0.55;
-        } else if (viewed) {
-          mesh.position.copy(basePosition).addScaledVector(dir, -0.1);
-          mesh.position.y = 0.78;
-          mesh.quaternion.copy(cardFrontQuaternion(dir));
         } else {
           mesh.position.copy(basePosition);
           mesh.rotation.set(-Math.PI / 2, 0, angle + (cardIndex - 1) * 0.08);
@@ -419,8 +421,9 @@ class TableScene3D {
         }
 
         mesh.userData.playerId = player.id;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        mesh.renderOrder = viewed ? 20 + cardIndex : 0;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
         this.cardsGroup.add(mesh);
         this.cardMeshes.push(mesh);
       }
@@ -430,22 +433,24 @@ class TableScene3D {
   createCardMesh(card, isBack) {
     const frontTexture = createCardTexture(card, isBack);
     const backTexture = createCardTexture(null, true);
-    const edgeMaterial = new THREE.MeshStandardMaterial({
-      color: isBack ? 0x123742 : 0xfff9eb,
-      roughness: 0.72,
-      metalness: 0.02,
+    const edgeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      toneMapped: false,
     });
-    const frontMaterial = new THREE.MeshStandardMaterial({
+    const frontMaterial = new THREE.MeshBasicMaterial({
       map: frontTexture,
-      roughness: 0.62,
-      metalness: 0.02,
       transparent: true,
+      depthWrite: false,
+      toneMapped: false,
     });
-    const backMaterial = new THREE.MeshStandardMaterial({
+    const backMaterial = new THREE.MeshBasicMaterial({
       map: backTexture,
-      roughness: 0.62,
-      metalness: 0.02,
       transparent: true,
+      depthWrite: false,
+      toneMapped: false,
     });
 
     return new THREE.Mesh(
@@ -579,19 +584,6 @@ class TableScene3D {
       group.add(crown);
     });
 
-    const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(Math.max(0.22, rowWidth * 0.12), 36),
-      new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.16,
-        side: THREE.DoubleSide,
-      })
-    );
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = -0.018;
-    group.add(shadow);
-
     return group;
   }
 
@@ -703,21 +695,22 @@ function drawCard(ctx, width, height, card, isBack) {
   const red = RED_SUITS.has(card.suit);
   ctx.fillStyle = red ? '#b52d37' : '#1b2328';
   ctx.textAlign = 'center';
-  ctx.font = '900 44px Georgia';
-  ctx.fillText(rank, 45, 64);
-  ctx.font = '900 38px Georgia';
-  ctx.fillText(suit, 45, 106);
+  drawCardCorner(ctx, rank, suit, 45, 64, 0);
+  drawCardCorner(ctx, rank, suit, width - 45, height - 48, Math.PI);
+
+  ctx.font = '900 118px Georgia';
+  ctx.fillText(suit, width / 2, height / 2 + 46);
+}
+
+function drawCardCorner(ctx, rank, suit, x, y, rotation) {
   ctx.save();
-  ctx.translate(width - 45, height - 48);
-  ctx.rotate(Math.PI);
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
   ctx.font = '900 44px Georgia';
   ctx.fillText(rank, 0, 0);
   ctx.font = '900 38px Georgia';
   ctx.fillText(suit, 0, 42);
   ctx.restore();
-
-  ctx.font = '900 118px Georgia';
-  ctx.fillText(suit, width / 2, height / 2 + 46);
 }
 
 function createCardTexture(card, isBack) {
@@ -740,14 +733,6 @@ function disposeMaterial(material) {
     item.dispose();
     disposed.add(item);
   });
-}
-
-function cardFrontQuaternion(frontNormal) {
-  const zAxis = frontNormal.clone().normalize();
-  const yAxis = new THREE.Vector3(0, 1, 0);
-  const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
-  const matrix = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-  return new THREE.Quaternion().setFromRotationMatrix(matrix);
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
@@ -907,6 +892,7 @@ function createChipFaceTexture(denomination, palette) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.anisotropy = 4;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 

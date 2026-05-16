@@ -481,7 +481,7 @@ function renderPlayers() {
   const host = isHost();
   const allAvatarsSelected = players.every((player) => normalizeAvatarKey(player.avatarUrl));
   els.startHandBtn.hidden = !host || state.room.status !== 'lobby';
-  els.startHandBtn.disabled = !host || players.length < 2 || state.room.status !== 'lobby' || !allAvatarsSelected;
+  els.startHandBtn.disabled = !host || players.length < 1 || state.room.status !== 'lobby' || !allAvatarsSelected;
   els.startHandBtn.title = !allAvatarsSelected ? '所有玩家选择头像后才能开始发牌。' : '';
   els.continueHandBtn.hidden = !host || state.room.status !== 'between_hands';
   els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands';
@@ -492,14 +492,18 @@ function renderPlayers() {
 function renderHand() {
   const hand = safeHand();
   els.potText.textContent = formatCoins(hand.pot || 0);
-  const current = findPlayer(hand.currentTurnPlayerId);
-  const timer = formatTurnTimer(hand.turnDeadlineAt);
-  els.currentTurnText.textContent = current ? `${current.nickname}${timer ? ` · ${timer}` : ''}` : '-';
+  renderCurrentTurnText(hand);
   renderTableScene3d(hand);
   renderCards(els.myCards, hand.myCards);
   renderHudCards(hand.myCards);
   renderPeekedCards();
   renderActions();
+}
+
+function renderCurrentTurnText(hand = safeHand()) {
+  const current = findPlayer(hand.currentTurnPlayerId);
+  const timer = formatTurnTimer(hand.turnDeadlineAt);
+  els.currentTurnText.textContent = current ? `${current.nickname}${timer ? ` · ${timer}` : ''}` : '-';
 }
 
 function renderHudCards(cards) {
@@ -670,11 +674,12 @@ function renderActions() {
     const targetPlayerId = findPeekTarget();
     if (targetPlayerId) send('action', { type: 'peek_player', targetPlayerId });
   }, 'secondary', peekUsedIds.includes(state.playerId) || !findPeekTarget() || !enabledBetOptions.length));
-  const defaultBet = enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0];
+  const isSoloShowdown = activeIds.length === 1;
+  const defaultBet = isSoloShowdown ? 0 : enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0];
   els.actions.appendChild(actionButton('开牌', () => {
     send('action', { type: 'showdown' });
-  }, 'primary', !hand.canShowdown || !enabledBetOptions.length));
-  els.actions.lastChild.textContent = `开牌 ${defaultBet}`;
+  }, 'primary', !hand.canShowdown || (!isSoloShowdown && !enabledBetOptions.length)));
+  els.actions.lastChild.textContent = isSoloShowdown ? '开牌' : `开牌 ${defaultBet}`;
 }
 
 function renderSettlement() {
@@ -1018,7 +1023,7 @@ function describeAction(payload) {
 
 function renderTurnClock() {
   if (!state.room || !state.room.hand) return;
-  renderHand();
+  renderCurrentTurnText(safeHand());
 }
 
 function formatTurnTimer(deadlineAt) {

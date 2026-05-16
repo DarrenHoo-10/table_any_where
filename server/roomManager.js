@@ -172,7 +172,7 @@ class RoomManager {
     if (!['lobby', 'between_hands'].includes(room.status)) {
       throw new Error('当前状态不能开牌。');
     }
-    if (room.players.length < MIN_PLAYERS) throw new Error('至少需要2名玩家。');
+    if (room.players.length < MIN_PLAYERS) throw new Error('至少需要1名玩家。');
     if (room.players.length > MAX_PLAYERS) throw new Error('最多支持12名玩家。');
     if (room.players.some((player) => !normalizeAvatarKey(player.avatarUrl))) {
       throw new Error('所有玩家请选择头像后再开始发牌。');
@@ -320,8 +320,11 @@ class RoomManager {
 
   showdown(room, playerId, amount) {
     const hand = room.hand;
-    if (hand.activePlayerIds.length !== 2) throw new Error('只剩两名玩家时才能开牌。');
-    const normalizedAmount = amount === undefined || amount === null || amount === ''
+    if (![1, 2].includes(hand.activePlayerIds.length)) throw new Error('只剩一名或两名玩家时才能开牌。');
+    const isSoloShowdown = hand.activePlayerIds.length === 1;
+    const normalizedAmount = isSoloShowdown
+      ? 0
+      : amount === undefined || amount === null || amount === ''
       ? this.getCurrentBetCost(room, playerId)
       : this.requireLegalBet(room, playerId, amount);
     const cost = this.getActionCost(room, playerId, normalizedAmount);
@@ -618,7 +621,7 @@ class RoomManager {
       peekUsedPlayerIds: hand.peekUsedPlayerIds.slice(),
       currentBet: hand.currentBet ? Object.assign({}, hand.currentBet) : null,
       legalBetOptions: viewerId ? this.getLegalBetOptions(room, viewerId) : [],
-      canShowdown: hand.activePlayerIds.length === 2,
+      canShowdown: [1, 2].includes(hand.activePlayerIds.length),
       myCards: viewerId && hand.viewedPlayerIds.includes(viewerId)
         ? hand.hands[viewerId].map(publicCard)
         : null,

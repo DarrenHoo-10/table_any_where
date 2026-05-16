@@ -66,6 +66,8 @@ const state = {
   peekedCards: null,
   leavingRoom: false,
   avatarModalOpen: false,
+  tableScene3d: null,
+  roomCopyHintTimer: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -83,8 +85,8 @@ const els = {};
   'lobbyView',
   'tableView',
   'finalView',
+  'roomPanel',
   'roomCodeText',
-  'copyRoomBtn',
   'openAvatarBtn',
   'avatarModal',
   'closeAvatarModalBtn',
@@ -93,6 +95,8 @@ const els = {};
   'leaveRoomBtn',
   'potText',
   'currentTurnText',
+  'tableScene3d',
+  'tableHudCards',
   'myCards',
   'peekedCards',
   'actions',
@@ -116,6 +120,16 @@ const els = {};
 });
 
 init();
+
+window.addEventListener('sfg-table-scene-ready', () => {
+  if (!state.room) return;
+  renderTableScene3d();
+});
+
+window.addEventListener('sfg-table-card-click', (event) => {
+  const playerId = event.detail && event.detail.playerId;
+  handleTableCardClick(playerId);
+});
 
 function init() {
   if (els.nicknameInput) els.nicknameInput.value = state.nickname;
@@ -172,13 +186,11 @@ function bindEvents() {
     send('join_room', { roomId, player: playerPayload() });
   });
 
-  els.copyRoomBtn.addEventListener('click', async () => {
-    if (!state.room) return;
-    if (await copyTextToClipboard(state.room.id)) {
-      toast('房间号已复制');
-    } else {
-      toast(`复制失败，房间号：${state.room.id}`);
-    }
+  els.roomPanel.addEventListener('click', copyRoomId);
+  els.roomPanel.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    copyRoomId();
   });
 
   els.openAvatarBtn.addEventListener('click', () => {
@@ -284,6 +296,7 @@ function handleMessage(message) {
 
   if (message.type === 'action_result') {
     state.status = describeAction(payload);
+    if (['bet', 'showdown'].includes(payload.action)) animateChipThrow(payload);
   }
 
   if (message.type === 'hand_settlement' && state.room) {
@@ -325,7 +338,10 @@ function render() {
   renderStatus();
   renderModeRulePreview();
   renderViews();
-  if (!state.room) return;
+  if (!state.room) {
+    renderTableScene3d();
+    return;
+  }
   renderRoom();
   renderRoomRules();
   renderAvatarPicker();
@@ -358,6 +374,34 @@ function renderRoom() {
   const summary = `${MODE_LABELS[config.mode] || config.mode} · 初始 ${formatCoins(config.initialCoins || DEFAULT_ROOM_CONFIG.initialCoins)} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
+}
+
+async function copyRoomId() {
+  if (!state.room) return;
+  const result = await copyTextToClipboard(state.room.id);
+  if (result === 'copied') {
+    setRoomCopyHint('✓ 已复制', 'copied');
+    toast('房间号已复制');
+  } else if (result === 'manual') {
+    setRoomCopyHint('✓ 已选中', 'copied');
+    toast('房间号已选中，请按复制');
+  } else {
+    setRoomCopyHint('复制失败', 'failed');
+    toast(`复制失败，房间号：${state.room.id}`);
+  }
+}
+
+function setRoomCopyHint(text, tone) {
+  const hint = document.querySelector('.room-copy-hint');
+  if (!hint) return;
+  if (state.roomCopyHintTimer) clearTimeout(state.roomCopyHintTimer);
+  hint.textContent = text;
+  hint.classList.toggle('is-copied', tone === 'copied');
+  hint.classList.toggle('is-failed', tone === 'failed');
+  state.roomCopyHintTimer = setTimeout(() => {
+    hint.textContent = '点击复制';
+    hint.classList.remove('is-copied', 'is-failed');
+  }, 1800);
 }
 
 function renderModeRulePreview() {
@@ -453,9 +497,78 @@ function renderHand() {
   const current = findPlayer(hand.currentTurnPlayerId);
   const timer = formatTurnTimer(hand.turnDeadlineAt);
   els.currentTurnText.textContent = current ? `${current.nickname}${timer ? ` · ${timer}` : ''}` : '-';
+  renderTableScene3d(hand);
   renderCards(els.myCards, hand.myCards);
+  renderHudCards(hand.myCards);
   renderPeekedCards();
   renderActions();
+}
+
+function renderHudCards(cards) {
+  if (!els.tableHudCards) return;
+  const hasCards = Array.isArray(cards) && cards.length > 0;
+  els.tableHudCards.hidden = !hasCards;
+  if (!hasCards) {
+    els.tableHudCards.innerHTML = '';
+    return;
+  }
+  renderCards(els.tableHudCards, cards);
+}
+
+function renderTableScene3d(hand = safeHand()) {
+  if (!els.tableScene3d) return;
+  const api = window.SFGTableScene3D;
+  if (!api) return;
+  if (!state.room) {
+    if (state.tableScene3d) state.tableScene3d.update({ room: null });
+    return;
+  }
+  if (!state.tableScene3d) {
+    state.tableScene3d = api.createTableScene3D(els.tableScene3d);
+  }
+
+  const players = (state.room.players || [])
+    .slice()
+    .sort((a, b) => (a.seat || 0) - (b.seat || 0))
+    .map((player) => {
+      const avatar = getAvatarInfo(player.avatarUrl);
+      return Object.assign({}, player, {
+        avatarLabel: avatar ? avatar.label : '待选头像',
+        avatarSrc: avatar ? `/avatars/${avatar.key}.png` : '/avatars/.png',
+      });
+    });
+
+  state.tableScene3d.update({
+    room: state.room,
+    players,
+    hand,
+    viewerId: state.playerId,
+  });
+}
+
+function handleTableCardClick(playerId) {
+  if (!playerId || !state.room || !state.room.hand) return;
+  const hand = safeHand();
+  const activeIds = hand.activePlayerIds || [];
+  const viewedIds = hand.viewedPlayerIds || [];
+  const peekUsedIds = hand.peekUsedPlayerIds || [];
+
+  if (playerId === state.playerId) {
+    if (activeIds.includes(playerId) && !viewedIds.includes(playerId)) {
+      send('action', { type: 'view_self' });
+    }
+    return;
+  }
+
+  if (
+    hand.currentTurnPlayerId === state.playerId &&
+    activeIds.includes(state.playerId) &&
+    activeIds.includes(playerId) &&
+    viewedIds.includes(playerId) &&
+    !peekUsedIds.includes(state.playerId)
+  ) {
+    send('action', { type: 'peek_player', targetPlayerId: playerId });
+  }
 }
 
 function renderCards(container, cards) {
@@ -654,34 +767,82 @@ function clearRoomSession(status, options = {}) {
 
 async function copyTextToClipboard(text) {
   const value = String(text || '');
-  if (!value) return false;
+  if (!value) return 'failed';
 
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(value);
-      return true;
+      return 'copied';
     } catch (error) {
       // Fall through to the selection-based copy path for restricted browsers.
     }
+  }
+
+  let wroteClipboardData = false;
+  const copyHandler = (event) => {
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', value);
+    wroteClipboardData = true;
+  };
+  document.addEventListener('copy', copyHandler);
+  try {
+    if (document.execCommand('copy') && wroteClipboardData) return 'copied';
+  } catch (error) {
+    // Fall through to the input-based copy path below.
+  } finally {
+    document.removeEventListener('copy', copyHandler);
   }
 
   const textarea = document.createElement('textarea');
   textarea.value = value;
   textarea.setAttribute('readonly', '');
   textarea.style.position = 'fixed';
-  textarea.style.top = '-1000px';
-  textarea.style.left = '-1000px';
+  textarea.style.top = '50%';
+  textarea.style.left = '50%';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
+  textarea.style.opacity = '0.01';
+  textarea.style.transform = 'translate(-50%, -50%)';
+  textarea.style.pointerEvents = 'none';
+  textarea.style.userSelect = 'text';
+  textarea.style.webkitUserSelect = 'text';
   document.body.appendChild(textarea);
+  textarea.focus();
   textarea.select();
   textarea.setSelectionRange(0, textarea.value.length);
 
   try {
-    return document.execCommand('copy');
+    if (document.execCommand('copy')) return 'copied';
   } catch (error) {
-    return false;
+    return showManualCopy(value);
   } finally {
     textarea.remove();
   }
+
+  return showManualCopy(value);
+}
+
+function showManualCopy(value) {
+  const previous = document.querySelector('.manual-copy-popover');
+  if (previous) previous.remove();
+
+  const popover = document.createElement('div');
+  popover.className = 'manual-copy-popover';
+  popover.innerHTML = `
+    <label>
+      <span>房间号已选中</span>
+      <input value="${escapeHtml(value)}" readonly>
+    </label>
+    <button type="button" aria-label="关闭复制提示">关闭</button>
+  `;
+  document.body.appendChild(popover);
+  const input = popover.querySelector('input');
+  input.focus();
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+  popover.querySelector('button').addEventListener('click', () => popover.remove());
+  setTimeout(() => popover.remove(), 8000);
+  return 'manual';
 }
 
 function readRoomConfig() {
@@ -775,8 +936,13 @@ function normalizeAvatarKey(value) {
 function avatarMarkup(value) {
   const key = normalizeAvatarKey(value);
   if (!key) return '<span class="avatar-placeholder">待选</span>';
-  const avatar = ZODIAC_AVATARS.find((item) => item.key === key);
+  const avatar = getAvatarInfo(key);
   return `<img class="avatar-img" src="/avatars/${key}.png" alt="${avatar.label}">`;
+}
+
+function getAvatarInfo(value) {
+  const key = normalizeAvatarKey(value);
+  return key ? ZODIAC_AVATARS.find((item) => item.key === key) : null;
 }
 
 function parseBetOptions(value) {
@@ -906,4 +1072,33 @@ function toast(message) {
 
 function getModeRules(mode) {
   return MODE_RULES[mode] || MODE_RULES.zha_jing_hua;
+}
+
+function animateChipThrow(payload) {
+  const amount = Number(payload.amount || 0);
+  if (!amount || !state.room) return;
+
+  const sourceLabel = document.querySelector(`[data-player-id="${CSS.escape(payload.playerId || '')}"]`);
+  const target = els.potText;
+  const sourceRect = sourceLabel ? sourceLabel.getBoundingClientRect() : null;
+  const targetRect = target ? target.getBoundingClientRect() : null;
+  if (!targetRect) return;
+
+  const startX = sourceRect ? sourceRect.left + sourceRect.width / 2 : window.innerWidth / 2;
+  const startY = sourceRect ? sourceRect.top + sourceRect.height / 2 : window.innerHeight - 120;
+  const endX = targetRect.left + targetRect.width / 2;
+  const endY = targetRect.top + targetRect.height / 2;
+  const midX = (startX + endX) / 2;
+  const midY = (startY + endY) / 2 - 130;
+  const chip = document.createElement('div');
+  chip.className = 'table-chip-throw';
+  chip.textContent = amount;
+  chip.style.setProperty('--chip-start-x', `${startX}px`);
+  chip.style.setProperty('--chip-start-y', `${startY}px`);
+  chip.style.setProperty('--chip-mid-x', `${midX}px`);
+  chip.style.setProperty('--chip-mid-y', `${midY}px`);
+  chip.style.setProperty('--chip-end-x', `${endX}px`);
+  chip.style.setProperty('--chip-end-y', `${endY}px`);
+  document.body.appendChild(chip);
+  chip.addEventListener('animationend', () => chip.remove(), { once: true });
 }

@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#10251f">
     <title>Straight Flush Web Game</title>
     <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/tableScene3d.js"></script>
     <script defer src="/app.js"></script>
   </head>
   <body>
@@ -114,18 +115,22 @@
       </section>
 
       <section id="tableView" class="view table-view" hidden>
-        <section class="room-panel">
+        <aside class="rotate-phone-hint" aria-label="横屏提示">
+          <strong>横屏体验更好</strong>
+          <span>可以继续竖屏玩，旋转手机会获得完整牌桌视角。</span>
+        </aside>
+
+        <section id="roomPanel" class="room-panel" role="button" tabindex="0" aria-label="点击复制房间号">
           <div>
-            <p class="section-kicker">房间</p>
+            <p class="section-kicker">房间 <span class="room-copy-hint">点击复制</span></p>
             <h2 id="roomCodeText">------</h2>
             <p data-room-meta class="room-meta">等待同步房间配置</p>
           </div>
-          <div class="room-actions">
-            <button id="copyRoomBtn" class="ghost-btn" type="button">复制</button>
-            <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
-            <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
-          </div>
         </section>
+        <div class="room-actions">
+          <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
+          <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
+        </div>
 
         <section id="avatarModal" class="avatar-modal" hidden>
           <div class="avatar-modal-card" role="dialog" aria-modal="true" aria-labelledby="avatarModalTitle">
@@ -139,6 +144,12 @@
         </section>
 
         <section class="felt-table">
+          <section id="tableScene3d" class="table-scene-3d" aria-label="3D 发牌桌">
+            <div class="table-scene-status">加载 3D 牌桌...</div>
+          </section>
+
+          <div id="tableHudCards" class="table-hud-cards" aria-label="我的牌面" hidden></div>
+
           <div class="table-metrics">
             <article>
               <span>奖池</span>

@@ -162,6 +162,7 @@ class RoomManager {
       foldedPlayerIds: [],
       viewedPlayerIds: [],
       peekUsedPlayerIds: [],
+      currentBet: null,
       currentTurnPlayerId: playerIds[0],
       actionLog: [],
       startedAt: Date.now(),
@@ -204,11 +205,16 @@ class RoomManager {
   }
 
   bet(room, playerId, amount) {
-    const normalizedAmount = this.requireBetOption(room, amount);
+    const normalizedAmount = this.requireLegalBet(room, playerId, amount);
     const cost = this.getActionCost(room, playerId, normalizedAmount);
     const player = this.requirePlayer(room, playerId);
     player.coins -= cost;
     room.hand.pot += cost;
+    room.hand.currentBet = {
+      playerId,
+      amount: normalizedAmount,
+      viewed: this.hasViewed(room, playerId),
+    };
     room.hand.actionLog.push({ type: 'bet', playerId, amount: normalizedAmount, cost, at: Date.now() });
     this.advanceTurn(room);
     return { room };
@@ -232,15 +238,17 @@ class RoomManager {
 
   peekPlayer(room, playerId, targetPlayerId) {
     const hand = room.hand;
-    if (hand.peekUsedPlayerIds.includes(playerId)) throw new Error('本手牌已经偷看过一次。');
-    if (!hand.activePlayerIds.includes(targetPlayerId)) throw new Error('只能偷看未弃牌玩家。');
-    if (targetPlayerId === playerId) throw new Error('不能偷看自己。');
+    if (hand.peekUsedPlayerIds.includes(playerId)) throw new Error('本手牌已经照牌过一次。');
+    if (!hand.activePlayerIds.includes(targetPlayerId)) throw new Error('只能照未弃牌玩家。');
+    if (targetPlayerId === playerId) throw new Error('不能照自己的牌。');
+    if (!hand.viewedPlayerIds.includes(targetPlayerId)) throw new Error('只能照已经看过自己的牌的玩家。');
 
     const player = this.requirePlayer(room, playerId);
-    player.coins -= room.config.peekCost;
-    hand.pot += room.config.peekCost;
+    const cost = this.getCurrentBetCost(room, playerId);
+    player.coins -= cost;
+    hand.pot += cost;
     hand.peekUsedPlayerIds.push(playerId);
-    hand.actionLog.push({ type: 'peek_player', playerId, targetPlayerId, cost: room.config.peekCost, at: Date.now() });
+    hand.actionLog.push({ type: 'peek_player', playerId, targetPlayerId, cost, at: Date.now() });
 
     return {
       room,
@@ -253,7 +261,7 @@ class RoomManager {
   showdown(room, playerId, amount) {
     const hand = room.hand;
     if (hand.activePlayerIds.length !== 2) throw new Error('只剩两名玩家时才能开牌。');
-    const normalizedAmount = this.requireBetOption(room, amount);
+    const normalizedAmount = this.requireLegalBet(room, playerId, amount);
     const cost = this.getActionCost(room, playerId, normalizedAmount);
     const player = this.requirePlayer(room, playerId);
     player.coins -= cost;
@@ -381,8 +389,66 @@ class RoomManager {
     return normalizedAmount;
   }
 
+  requireLegalBet(room, playerId, amount) {
+    const normalizedAmount = this.requireBetOption(room, amount);
+    const legalBet = this.getLegalBetOptions(room, playerId).find((option) => option.amount === normalizedAmount);
+    if (!legalBet || legalBet.disabled) {
+      throw new Error(legalBet?.reason || '当前不能选择这个下注档。');
+    }
+    return normalizedAmount;
+  }
+
   getActionCost(room, playerId, amount) {
-    return room.hand.viewedPlayerIds.includes(playerId) ? amount * 2 : amount;
+    return amount;
+  }
+
+  getCurrentBetCost(room, playerId) {
+    const legalOptions = this.getLegalBetOptions(room, playerId).filter((option) => !option.disabled);
+    if (!legalOptions.length) throw new Error('当前没有可用的下注档。');
+    return legalOptions[0].amount;
+  }
+
+  getLegalBetOptions(room, playerId) {
+    const minimum = this.getMinimumBetAmount(room, playerId);
+    return room.config.betOptions.map((amount) => {
+      if (amount < minimum) {
+        return {
+          amount,
+          cost: this.getActionCost(room, playerId, amount),
+          disabled: true,
+          reason: `下注金额低于当前需要的 ${Math.ceil(minimum)}。`,
+        };
+      }
+      if (!this.hasViewed(room, playerId) && !this.canOpenPlayerCallBlindBet(room, amount)) {
+        return {
+          amount,
+          cost: this.getActionCost(room, playerId, amount),
+          disabled: true,
+          reason: '闷牌下注不能超过看牌玩家可跟注的最高档。',
+        };
+      }
+      return {
+        amount,
+        cost: this.getActionCost(room, playerId, amount),
+        disabled: false,
+      };
+    });
+  }
+
+  getMinimumBetAmount(room, playerId) {
+    const hand = room.hand;
+    if (!hand || !hand.currentBet) return room.config.baseBet;
+
+    const currentLevel = hand.currentBet.viewed ? hand.currentBet.amount / 2 : hand.currentBet.amount;
+    return this.hasViewed(room, playerId) ? currentLevel * 2 : currentLevel;
+  }
+
+  canOpenPlayerCallBlindBet(room, amount) {
+    return room.config.betOptions.some((option) => option >= amount * 2);
+  }
+
+  hasViewed(room, playerId) {
+    return Boolean(room.hand && room.hand.viewedPlayerIds.includes(playerId));
   }
 
   advanceTurn(room) {
@@ -424,6 +490,8 @@ class RoomManager {
       foldedPlayerIds: hand.foldedPlayerIds.slice(),
       viewedPlayerIds: hand.viewedPlayerIds.slice(),
       peekUsedPlayerIds: hand.peekUsedPlayerIds.slice(),
+      currentBet: hand.currentBet ? Object.assign({}, hand.currentBet) : null,
+      legalBetOptions: viewerId ? this.getLegalBetOptions(room, viewerId) : [],
       canShowdown: hand.activePlayerIds.length === 2,
       myCards: viewerId && hand.viewedPlayerIds.includes(viewerId)
         ? hand.hands[viewerId].map(publicCard)

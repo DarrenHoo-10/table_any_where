@@ -198,7 +198,7 @@ function handleMessage(message) {
       state.status = '已看自己的牌';
     } else {
       state.peekedCards = payload;
-      state.status = '已偷看对手牌';
+      state.status = '已照对手牌';
     }
   }
 
@@ -276,7 +276,7 @@ function renderViews() {
 function renderRoom() {
   els.roomCodeText.textContent = state.room.id || '-';
   const config = state.room.config || DEFAULT_ROOM_CONFIG;
-  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · 看牌 ${config.peekCost}`;
+  const summary = `${MODE_LABELS[config.mode] || config.mode} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · 照牌费随下注`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
 }
@@ -310,6 +310,7 @@ function renderPlayers() {
   });
 
   els.startHandBtn.disabled = !isHost() || players.length < 2 || !['lobby', 'between_hands'].includes(state.room.status);
+  els.continueHandBtn.hidden = !isHost();
   els.continueHandBtn.disabled = !isHost() || state.room.status !== 'between_hands';
   els.finishGameBtn.disabled = !isHost() || state.room.status === 'playing';
 }
@@ -341,7 +342,7 @@ function renderPeekedCards() {
   if (!state.peekedCards) return;
   const target = findPlayer(state.peekedCards.targetPlayerId);
   const title = document.createElement('p');
-  title.textContent = `偷看：${target ? target.nickname : '对手'}`;
+  title.textContent = `照牌：${target ? target.nickname : '对手'}`;
   els.peekedCards.appendChild(title);
   const row = document.createElement('div');
   row.className = 'card-row is-small';
@@ -358,6 +359,9 @@ function renderActions() {
   const isTurn = hand.currentTurnPlayerId === state.playerId;
   const hasViewed = viewedIds.includes(state.playerId);
   const options = (state.room.config && state.room.config.betOptions) || DEFAULT_ROOM_CONFIG.betOptions;
+  const legalOptions = Array.isArray(hand.legalBetOptions) ? hand.legalBetOptions : [];
+  const legalByAmount = new Map(legalOptions.map((option) => [option.amount, option]));
+  const enabledBetOptions = legalOptions.filter((option) => !option.disabled);
   els.actions.innerHTML = '';
 
   if (!state.room.hand) {
@@ -380,20 +384,22 @@ function renderActions() {
   }
 
   options.slice(0, 4).forEach((amount) => {
-    const cost = hasViewed ? amount * 2 : amount;
-    els.actions.appendChild(actionButton(`下 ${amount}${cost !== amount ? ` / 扣 ${cost}` : ''}`, () => {
+    const option = legalByAmount.get(amount) || { amount, cost: amount, disabled: false };
+    const button = actionButton(`下 ${amount}`, () => {
       send('action', { type: 'bet', amount });
-    }));
+    }, 'primary', option.disabled);
+    if (option.reason) button.title = option.reason;
+    els.actions.appendChild(button);
   });
 
   els.actions.appendChild(actionButton('弃牌', () => send('action', { type: 'fold' }), 'danger'));
-  els.actions.appendChild(actionButton(peekUsedIds.includes(state.playerId) ? '已偷看' : '偷看', () => {
+  els.actions.appendChild(actionButton(peekUsedIds.includes(state.playerId) ? '已照牌' : '照牌', () => {
     const targetPlayerId = findPeekTarget();
     if (targetPlayerId) send('action', { type: 'peek_player', targetPlayerId });
-  }, 'secondary', peekUsedIds.includes(state.playerId) || !findPeekTarget()));
+  }, 'secondary', peekUsedIds.includes(state.playerId) || !findPeekTarget() || !enabledBetOptions.length));
   els.actions.appendChild(actionButton('开牌', () => {
-    send('action', { type: 'showdown', amount: options[0] });
-  }, 'primary', !hand.canShowdown));
+    send('action', { type: 'showdown', amount: enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0] });
+  }, 'primary', !hand.canShowdown || !enabledBetOptions.length));
 }
 
 function renderSettlement() {
@@ -455,7 +461,7 @@ function applyDefaultConfig() {
   els.maxPlayersInput.value = DEFAULT_ROOM_CONFIG.maxPlayers;
   els.baseBetInput.value = DEFAULT_ROOM_CONFIG.baseBet;
   els.bonusInput.value = DEFAULT_ROOM_CONFIG.bonus;
-  els.peekCostInput.value = DEFAULT_ROOM_CONFIG.peekCost;
+  els.peekCostInput.value = '同当前下注';
   els.betOptionsInput.value = DEFAULT_ROOM_CONFIG.betOptions.join('/');
 }
 
@@ -483,6 +489,8 @@ function normalizeHand(hand) {
     foldedPlayerIds: [],
     viewedPlayerIds: [],
     peekUsedPlayerIds: [],
+    currentBet: null,
+    legalBetOptions: [],
     canShowdown: false,
     myCards: null,
   }, hand || {});
@@ -505,8 +513,10 @@ function findPlayer(playerId) {
 }
 
 function findPeekTarget() {
-  const activeIds = safeHand().activePlayerIds || [];
-  return activeIds.find((id) => id !== state.playerId) || '';
+  const hand = safeHand();
+  const activeIds = hand.activePlayerIds || [];
+  const viewedIds = hand.viewedPlayerIds || [];
+  return activeIds.find((id) => id !== state.playerId && viewedIds.includes(id)) || '';
 }
 
 function describeAction(payload) {
@@ -516,7 +526,7 @@ function describeAction(payload) {
     bet: `下注 ${payload.amount}`,
     fold: '弃牌',
     view_self: '看牌',
-    peek_player: '偷看',
+    peek_player: '照牌',
     showdown: '开牌',
   };
   return `${name}${labels[payload.action] || '行动'}`;

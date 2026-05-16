@@ -91,6 +91,31 @@ test('rooms no longer use custom player caps and reject only the thirteenth play
   );
 });
 
+test('single player can start, view cards, and settle a solo hand', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'Solo' }, { baseBet: 5 });
+  manager.selectAvatar(room.id, host.id, 'rat');
+
+  manager.startHand(room.id, host.id);
+
+  assert.equal(room.status, 'playing');
+  assert.equal(room.players.length, 1);
+  assert.equal(room.hand.activePlayerIds.length, 1);
+  assert.equal(room.hand.pot, 5);
+  assert.equal(host.coins, 995);
+  assert.equal(manager.serializeHand(room, host.id).canShowdown, true);
+
+  const viewResult = manager.handleAction(room.id, host.id, { type: 'view_self' });
+  assert.equal(viewResult.privateCards.length, 3);
+
+  manager.handleAction(room.id, host.id, { type: 'showdown' });
+
+  assert.equal(room.status, 'between_hands');
+  assert.deepEqual(room.lastSettlement.winnerIds, [host.id]);
+  assert.deepEqual(room.lastSettlement.revealedPlayerIds, [host.id]);
+  assert.equal(host.coins, 1000);
+});
+
 test('room initial coins apply to host, joined players, and support coins', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom(

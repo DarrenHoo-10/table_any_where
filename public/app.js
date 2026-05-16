@@ -464,6 +464,9 @@ function renderPlayers() {
     if (player.isHost) tags.push('房主');
     if (player.connected === false) tags.push('离线');
     if (!normalizeAvatarKey(player.avatarUrl)) tags.push('待选头像');
+    if (state.room.hand && !(hand.activePlayerIds || []).includes(player.id) && !(hand.foldedPlayerIds || []).includes(player.id)) {
+      tags.push('等待下手');
+    }
     if ((hand.foldedPlayerIds || []).includes(player.id)) tags.push('弃牌');
     if ((hand.viewedPlayerIds || []).includes(player.id)) tags.push('已看');
     if (hand.currentTurnPlayerId === player.id) tags.push('行动');
@@ -487,7 +490,8 @@ function renderPlayers() {
   els.startHandBtn.disabled = !host || players.length < 1 || state.room.status !== 'lobby' || !allAvatarsSelected;
   els.startHandBtn.title = !allAvatarsSelected ? '所有玩家选择头像后才能开始发牌。' : '';
   els.continueHandBtn.hidden = !host || state.room.status !== 'between_hands';
-  els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands';
+  els.continueHandBtn.disabled = !host || state.room.status !== 'between_hands' || !allAvatarsSelected;
+  els.continueHandBtn.title = !allAvatarsSelected ? '所有玩家选择头像后才能继续发牌。' : '';
   els.finishGameBtn.hidden = !host;
   els.finishGameBtn.disabled = !host || state.room.status === 'playing';
 }
@@ -682,7 +686,8 @@ function renderActions() {
   }
 
   if (!isActive) {
-    els.actions.appendChild(actionNote('你已弃牌，等待结算'));
+    const foldedIds = hand.foldedPlayerIds || [];
+    els.actions.appendChild(actionNote(foldedIds.includes(state.playerId) ? '你已弃牌，等待结算' : '你正在旁观，等待下一手'));
     return;
   }
 
@@ -966,7 +971,7 @@ function renderAvatarPicker() {
   const selectedKey = normalizeAvatarKey(currentPlayer?.avatarUrl);
   const avatarOptions = Array.isArray(state.room?.avatarOptions) ? state.room.avatarOptions : [];
   const optionsByKey = new Map(avatarOptions.map((option) => [option.key, option]));
-  const locked = state.room?.status !== 'lobby';
+  const locked = state.room?.status !== 'lobby' && Boolean(selectedKey);
 
   els.avatarPicker.innerHTML = '';
   ZODIAC_AVATARS.forEach((avatar) => {
@@ -998,7 +1003,7 @@ function renderAvatarModal() {
   els.avatarModal.classList.toggle('is-required', mustChooseAvatar);
   els.closeAvatarModalBtn.hidden = mustChooseAvatar;
   els.openAvatarBtn.textContent = currentPlayerHasAvatar() ? '更换头像' : '选择头像';
-  els.openAvatarBtn.disabled = state.room.status !== 'lobby';
+  els.openAvatarBtn.disabled = state.room.status === 'finished' || (state.room.status !== 'lobby' && currentPlayerHasAvatar());
 }
 
 function syncAvatarModalState() {
@@ -1060,6 +1065,7 @@ function normalizeHand(hand) {
     pot: 0,
     currentTurnPlayerId: '',
     activePlayerIds: [],
+    dealtPlayerIds: [],
     foldedPlayerIds: [],
     viewedPlayerIds: [],
     peekUsedPlayerIds: [],

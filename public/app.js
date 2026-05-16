@@ -501,8 +501,10 @@ function renderPlayers() {
 
     item.innerHTML = `
       <div class="player-main">
-        <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
-        <span class="turn-countdown${isTurnWarning ? ' is-warning' : ''}" data-turn-countdown="${escapeHtml(player.id)}" aria-live="polite" ${turnTimer ? '' : 'hidden'}>${turnTimer}</span>
+        <span class="player-avatar-wrap">
+          <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
+          ${turnTimer ? `<span class="turn-countdown${isTurnWarning ? ' is-warning' : ''}" data-turn-countdown="${escapeHtml(player.id)}" aria-label="行动倒计时" aria-live="polite">${turnTimer}</span>` : ''}
+        </span>
         <div>
           <strong>${escapeHtml(player.nickname)}</strong>
           <span>${tags.join(' ')}</span>
@@ -1285,10 +1287,12 @@ function updatePlayerTurnCountdown(hand) {
   const remainingSeconds = getTurnRemainingSeconds(hand.turnDeadlineAt);
   const timer = formatTurnTimer(hand.turnDeadlineAt);
   document.querySelectorAll('[data-turn-countdown]').forEach((element) => {
-    const active = element.dataset.turnCountdown === hand.currentTurnPlayerId && timer;
-    element.hidden = !active;
-    element.textContent = active ? timer : '';
-    element.classList.toggle('is-warning', active && remainingSeconds <= 15);
+    if (element.dataset.turnCountdown !== hand.currentTurnPlayerId) {
+      element.remove();
+      return;
+    }
+    element.textContent = timer;
+    element.classList.toggle('is-warning', remainingSeconds <= 15);
   });
 }
 

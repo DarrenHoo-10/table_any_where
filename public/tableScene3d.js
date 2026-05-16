@@ -9,6 +9,7 @@ const SUITS = {
 
 const RED_SUITS = new Set(['H', 'D']);
 const CARD_SIZE = { width: 0.42, height: 0.62 };
+const CARD_THICKNESS = 0.012;
 const TABLE_RADIUS = 3.05;
 const LABEL_RADIUS = 4.15;
 const PLAYER_CHIP_LIMIT = 50;
@@ -384,6 +385,7 @@ class TableScene3D {
           mesh.position.copy(basePosition).addScaledVector(dir, -0.1);
           mesh.position.y = 0.78;
           mesh.lookAt(0, 0.64, 0);
+          mesh.rotateY(Math.PI);
           mesh.rotateZ((cardIndex - 1) * -0.08);
         } else {
           mesh.position.copy(basePosition);
@@ -410,21 +412,30 @@ class TableScene3D {
   }
 
   createCardMesh(card, isBack) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 376;
-    const ctx = canvas.getContext('2d');
-    drawCard(ctx, canvas.width, canvas.height, card, isBack);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.anisotropy = 4;
-    const material = new THREE.MeshStandardMaterial({
-      map: texture,
+    const frontTexture = createCardTexture(card, isBack);
+    const backTexture = createCardTexture(null, true);
+    const edgeMaterial = new THREE.MeshStandardMaterial({
+      color: isBack ? 0xf5d77d : 0xd1a954,
+      roughness: 0.72,
+      metalness: 0.02,
+    });
+    const frontMaterial = new THREE.MeshStandardMaterial({
+      map: frontTexture,
       roughness: 0.62,
       metalness: 0.02,
-      side: THREE.DoubleSide,
       transparent: true,
     });
-    return new THREE.Mesh(new THREE.PlaneGeometry(CARD_SIZE.width, CARD_SIZE.height), material);
+    const backMaterial = new THREE.MeshStandardMaterial({
+      map: backTexture,
+      roughness: 0.62,
+      metalness: 0.02,
+      transparent: true,
+    });
+
+    return new THREE.Mesh(
+      new THREE.BoxGeometry(CARD_SIZE.width, CARD_SIZE.height, CARD_THICKNESS),
+      [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial]
+    );
   }
 
   getLabel(playerId) {
@@ -457,8 +468,7 @@ class TableScene3D {
   clearCards() {
     this.cardMeshes.forEach((mesh) => {
       mesh.geometry.dispose();
-      mesh.material.map?.dispose();
-      mesh.material.dispose();
+      disposeMaterial(mesh.material);
     });
     this.cardMeshes = [];
     while (this.cardsGroup.children.length) this.cardsGroup.remove(this.cardsGroup.children[0]);
@@ -698,6 +708,28 @@ function drawCard(ctx, width, height, card, isBack) {
 
   ctx.font = '900 118px Georgia';
   ctx.fillText(suit, width / 2, height / 2 + 46);
+}
+
+function createCardTexture(card, isBack) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 376;
+  const ctx = canvas.getContext('2d');
+  drawCard(ctx, canvas.width, canvas.height, card, isBack);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function disposeMaterial(material) {
+  const materials = Array.isArray(material) ? material : [material];
+  const disposed = new Set();
+  materials.forEach((item) => {
+    if (!item || disposed.has(item)) return;
+    item.map?.dispose();
+    item.dispose();
+    disposed.add(item);
+  });
 }
 
 function roundRect(ctx, x, y, width, height, radius) {

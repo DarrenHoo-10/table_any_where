@@ -63,6 +63,9 @@ const state = {
   lastSession: loadJson('lastRoomSession'),
   status: '未连接',
   peekedCards: null,
+  peekTargetModalOpen: false,
+  peekResultModalOpen: false,
+  peekResultTimer: null,
   leavingRoom: false,
   avatarModalOpen: false,
   tableScene3d: null,
@@ -89,6 +92,12 @@ const els = {};
   'openAvatarBtn',
   'avatarModal',
   'closeAvatarModalBtn',
+  'peekTargetModal',
+  'peekTargetOptions',
+  'closePeekTargetModalBtn',
+  'peekResultModal',
+  'peekResultBody',
+  'confirmPeekResultBtn',
   'playerList',
   'startHandBtn',
   'leaveRoomBtn',
@@ -203,6 +212,11 @@ function bindEvents() {
     state.avatarModalOpen = false;
     render();
   });
+  els.closePeekTargetModalBtn.addEventListener('click', () => {
+    state.peekTargetModalOpen = false;
+    render();
+  });
+  els.confirmPeekResultBtn.addEventListener('click', closePeekResultModal);
   els.startHandBtn.addEventListener('click', () => send('start_hand'));
   els.continueHandBtn.addEventListener('click', () => send('start_hand'));
   els.finishGameBtn.addEventListener('click', () => send('finish_game'));
@@ -271,7 +285,11 @@ function handleMessage(message) {
     state.roomId = state.room.id;
     syncSelectedAvatar();
     syncAvatarModalState();
-    if (!state.room.hand) state.peekedCards = null;
+    if (!state.room.hand) {
+      state.peekedCards = null;
+      state.peekTargetModalOpen = false;
+      closePeekResultModal({ renderAfterClose: false });
+    }
     if (state.room.finalSettlement) state.status = '游戏已结算';
   }
 
@@ -282,10 +300,12 @@ function handleMessage(message) {
   if (message.type === 'private_cards') {
     if (payload.participantHands) {
       state.peekedCards = payload;
+      state.peekResultModalOpen = true;
       if (state.room && state.room.hand && payload.participantHands[state.playerId]) {
         state.room.hand.myCards = payload.participantHands[state.playerId];
       }
       state.status = '照牌结果已揭晓';
+      schedulePeekResultAutoClose();
     } else if (payload.targetPlayerId === state.playerId) {
       if (state.room && state.room.hand) state.room.hand.myCards = payload.cards;
       state.status = '已看自己的牌';
@@ -303,6 +323,8 @@ function handleMessage(message) {
   if (message.type === 'hand_settlement' && state.room) {
     state.room.lastSettlement = payload;
     state.peekedCards = null;
+    state.peekTargetModalOpen = false;
+    closePeekResultModal({ renderAfterClose: false });
     state.status = '本手结算完成';
   }
 
@@ -347,6 +369,8 @@ function render() {
   renderRoomRules();
   renderAvatarPicker();
   renderAvatarModal();
+  renderPeekTargetModal();
+  renderPeekResultModal();
   renderPlayers();
   renderHand();
   renderSettlement();
@@ -573,10 +597,12 @@ function handleTableCardClick(playerId) {
     hand.currentTurnPlayerId === state.playerId &&
     activeIds.includes(state.playerId) &&
     activeIds.includes(playerId) &&
+    viewedIds.includes(state.playerId) &&
     viewedIds.includes(playerId) &&
     !peekUsedIds.includes(state.playerId)
   ) {
-    send('action', { type: 'peek_player', targetPlayerId: playerId });
+    state.peekTargetModalOpen = true;
+    render();
   }
 }
 
@@ -717,12 +743,12 @@ function renderActions() {
   els.actions.appendChild(actionButton('弃牌', () => send('action', { type: 'fold' }), 'danger'));
   const peekTargets = findPeekTargets();
   if (peekTargets.length) {
-    peekTargets.forEach((targetPlayerId) => {
-      const target = findPlayer(targetPlayerId);
-      els.actions.appendChild(actionButton(`照 ${target ? target.nickname : '玩家'}`, () => {
-        send('action', { type: 'peek_player', targetPlayerId });
-      }, 'secondary', peekUsedIds.includes(state.playerId) || !enabledBetOptions.length));
-    });
+    const peekButton = actionButton('照牌', () => {
+      state.peekTargetModalOpen = true;
+      render();
+    }, 'secondary', peekUsedIds.includes(state.playerId) || !enabledBetOptions.length || !hasViewed);
+    if (!hasViewed) peekButton.title = '看牌后才可以照牌。';
+    els.actions.appendChild(peekButton);
   } else {
     els.actions.appendChild(actionButton(peekUsedIds.includes(state.playerId) ? '已照牌' : '照牌', () => {}, 'secondary', true));
   }
@@ -754,6 +780,84 @@ function renderPendingPeekActions(request) {
   }
 
   els.actions.appendChild(actionNote(`${requester ? requester.nickname : '玩家'} 正在等待 ${target ? target.nickname : '对方'} 回应照牌`));
+}
+
+function renderPeekTargetModal() {
+  if (!els.peekTargetModal || !els.peekTargetOptions) return;
+  const hand = safeHand();
+  const activeIds = hand.activePlayerIds || [];
+  const viewedIds = hand.viewedPlayerIds || [];
+  const canChoose = state.peekTargetModalOpen
+    && state.room
+    && state.room.hand
+    && hand.currentTurnPlayerId === state.playerId
+    && activeIds.includes(state.playerId)
+    && viewedIds.includes(state.playerId)
+    && !(hand.peekUsedPlayerIds || []).includes(state.playerId)
+    && !hand.pendingPeekRequest;
+
+  els.peekTargetModal.hidden = !canChoose;
+  els.peekTargetOptions.innerHTML = '';
+  if (!canChoose) return;
+
+  const targets = findPeekTargets();
+  if (!targets.length) {
+    const note = document.createElement('p');
+    note.className = 'action-note';
+    note.textContent = '当前没有可照牌的玩家。';
+    els.peekTargetOptions.appendChild(note);
+    return;
+  }
+
+  targets.forEach((targetPlayerId) => {
+    const target = findPlayer(targetPlayerId);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'peek-target-option';
+    button.innerHTML = `
+      <span class="player-avatar" aria-hidden="true">${avatarMarkup(target?.avatarUrl)}</span>
+      <strong>${escapeHtml(target ? target.nickname : '玩家')}</strong>
+      <span>发送照牌请求</span>
+    `;
+    button.addEventListener('click', () => {
+      state.peekTargetModalOpen = false;
+      send('action', { type: 'peek_player', targetPlayerId });
+      render();
+    });
+    els.peekTargetOptions.appendChild(button);
+  });
+}
+
+function renderPeekResultModal() {
+  if (!els.peekResultModal || !els.peekResultBody) return;
+  const result = state.peekedCards && state.peekedCards.participantHands ? state.peekedCards : null;
+  els.peekResultModal.hidden = !(state.peekResultModalOpen && result);
+  els.peekResultBody.innerHTML = '';
+  if (!state.peekResultModalOpen || !result) return;
+
+  const requester = findPlayer(result.requesterId);
+  const target = findPlayer(result.targetPlayerId);
+  const winner = findPlayer(result.winnerId);
+  const summary = document.createElement('p');
+  summary.className = 'peek-result-summary';
+  summary.textContent = `${requester ? requester.nickname : '发起方'} vs ${target ? target.nickname : '被照方'} · 胜者 ${winner ? winner.nickname : '玩家'}`;
+  els.peekResultBody.appendChild(summary);
+
+  [result.requesterId, result.targetPlayerId].forEach((playerId) => {
+    const cards = result.participantHands[playerId];
+    if (!Array.isArray(cards)) return;
+    const player = findPlayer(playerId);
+    const item = document.createElement('article');
+    item.className = 'peek-result-hand';
+    const label = document.createElement('p');
+    label.textContent = `${player ? player.nickname : '玩家'}${playerId === result.winnerId ? ' · 赢' : ' · 输'}`;
+    const row = document.createElement('div');
+    row.className = 'card-row is-small';
+    item.appendChild(label);
+    item.appendChild(row);
+    els.peekResultBody.appendChild(item);
+    renderCards(row, cards);
+  });
 }
 
 function renderSettlement() {
@@ -836,6 +940,23 @@ function actionNote(text) {
   return note;
 }
 
+function schedulePeekResultAutoClose() {
+  if (state.peekResultTimer) clearTimeout(state.peekResultTimer);
+  state.peekResultTimer = setTimeout(() => {
+    closePeekResultModal();
+  }, 5000);
+}
+
+function closePeekResultModal(options = {}) {
+  if (state.peekResultTimer) {
+    clearTimeout(state.peekResultTimer);
+    state.peekResultTimer = null;
+  }
+  state.peekResultModalOpen = false;
+  if (options.renderAfterClose === false) return;
+  render();
+}
+
 function leaveRoom() {
   state.leavingRoom = true;
   send('leave_room');
@@ -849,6 +970,8 @@ function clearRoomSession(status, options = {}) {
   state.playerId = '';
   state.playerToken = '';
   state.peekedCards = null;
+  state.peekTargetModalOpen = false;
+  closePeekResultModal({ renderAfterClose: false });
   state.lastSession = null;
   if (!options.keepLeaving) state.leavingRoom = false;
   state.status = status;

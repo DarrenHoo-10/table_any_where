@@ -955,6 +955,43 @@ select:focus {
   color: var(--text);
 }
 
+.peek-target-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.peek-target-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border-radius: 14px;
+  padding: 10px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.peek-target-option strong {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peek-target-option span:last-child,
+.peek-result-summary {
+  color: var(--muted);
+}
+
+.peek-result-body {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .actions-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

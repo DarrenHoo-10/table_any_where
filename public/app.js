@@ -7,8 +7,8 @@ const DEFAULT_ROOM_CONFIG = {
 };
 
 const MODE_LABELS = {
-  zha_jing_hua: 'Straight Flush Web Game',
-  tractor: '拖拉机',
+  zha_jing_hua: 'Flush',
+  tractor: 'Straight',
 };
 
 const SUITS = {

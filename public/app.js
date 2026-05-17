@@ -7,6 +7,8 @@ const DEFAULT_ROOM_CONFIG = {
   actionTimeoutSeconds: 180,
 };
 
+const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray']);
+
 const ZODIAC_AVATARS = [
   { key: 'rat', label: '鼠', legacy: '🐭' },
   { key: 'ox', label: '牛', legacy: '🐮' },
@@ -68,10 +70,10 @@ const state = {
   peekResultTimer: null,
   leavingRoom: false,
   avatarModalOpen: false,
+  roomPanelCollapsed: false,
+  rotateHintDismissed: localStorage.getItem('rotateHintDismissed') === 'true',
   tableScene3d: null,
   roomCopyHintTimer: null,
-  turnWarningKey: '',
-  turnWarningAudioContext: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -90,7 +92,9 @@ const els = {};
   'tableView',
   'finalView',
   'roomPanel',
+  'roomPanelToggleBtn',
   'roomCodeText',
+  'dismissRotateHintBtn',
   'openAvatarBtn',
   'avatarModal',
   'closeAvatarModalBtn',
@@ -106,7 +110,7 @@ const els = {};
   'potText',
   'currentTurnText',
   'tableScene3d',
-  'tableHudCards',
+  'tableTurnTimer',
   'myCards',
   'peekedCards',
   'actions',
@@ -141,6 +145,7 @@ window.addEventListener('sfg-table-card-click', (event) => {
 });
 
 function init() {
+  applyVisualConfig();
   if (els.nicknameInput) els.nicknameInput.value = state.nickname;
   applyDefaultConfig();
   bindEvents();
@@ -197,7 +202,23 @@ function bindEvents() {
   els.roomPanel.addEventListener('keydown', (event) => {
     if (!['Enter', ' '].includes(event.key)) return;
     event.preventDefault();
+    if (state.roomPanelCollapsed) {
+      toggleRoomPanel();
+      return;
+    }
     copyRoomId();
+  });
+  els.roomPanelToggleBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleRoomPanel();
+  });
+  els.roomPanelToggleBtn.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+  });
+  els.dismissRotateHintBtn.addEventListener('click', () => {
+    state.rotateHintDismissed = true;
+    localStorage.setItem('rotateHintDismissed', 'true');
+    renderRotateHint();
   });
 
   els.openAvatarBtn.addEventListener('click', () => {
@@ -273,10 +294,12 @@ function handleMessage(message) {
 
   if (message.type === 'welcome') {
     state.leavingRoom = false;
+    state.roomPanelCollapsed = false;
     state.roomId = payload.roomId;
     state.playerId = payload.playerId;
     state.playerToken = payload.playerToken;
     state.lastSession = payload;
+    state.status = '已进入房间';
     localStorage.setItem('lastRoomSession', JSON.stringify(payload));
   }
 
@@ -318,11 +341,13 @@ function handleMessage(message) {
   }
 
   if (message.type === 'action_result') {
+    applyCoinSnapshot(payload);
     state.status = describeAction(payload);
     if (['bet', 'showdown'].includes(payload.action)) animateChipThrow(payload);
   }
 
   if (message.type === 'hand_settlement' && state.room) {
+    applySettlementCoins(payload);
     state.room.lastSettlement = payload;
     state.peekedCards = null;
     state.peekTargetModalOpen = false;
@@ -363,6 +388,7 @@ function render() {
   renderStatus();
   renderModeRulePreview();
   renderViews();
+  renderRotateHint();
   if (!state.room) {
     renderTableScene3d();
     return;
@@ -401,10 +427,30 @@ function renderRoom() {
   const summary = `${MODE_LABELS[config.mode] || config.mode} · 初始 ${formatCoins(config.initialCoins || DEFAULT_ROOM_CONFIG.initialCoins)} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
   const roomMeta = document.querySelector('[data-room-meta]');
   if (roomMeta) roomMeta.textContent = summary;
+  els.roomPanel.classList.toggle('is-collapsed', state.roomPanelCollapsed);
+  els.roomPanel.setAttribute('aria-label', state.roomPanelCollapsed ? '展开房间信息' : '点击复制房间号');
+  els.roomPanelToggleBtn.setAttribute('aria-expanded', state.roomPanelCollapsed ? 'false' : 'true');
+  els.roomPanelToggleBtn.setAttribute('aria-label', state.roomPanelCollapsed ? '展开房间信息' : '折叠房间信息');
+  els.roomPanelToggleBtn.textContent = state.roomPanelCollapsed ? '+' : '-';
+}
+
+function renderRotateHint() {
+  const hint = document.querySelector('.rotate-phone-hint');
+  if (!hint) return;
+  hint.hidden = state.rotateHintDismissed || !state.room;
+}
+
+function toggleRoomPanel() {
+  state.roomPanelCollapsed = !state.roomPanelCollapsed;
+  renderRoom();
 }
 
 async function copyRoomId() {
   if (!state.room) return;
+  if (state.roomPanelCollapsed) {
+    toggleRoomPanel();
+    return;
+  }
   const result = await copyTextToClipboard(state.room.id);
   if (result === 'copied') {
     setRoomCopyHint('✓ 已复制', 'copied');
@@ -496,15 +542,10 @@ function renderPlayers() {
     if ((hand.foldedPlayerIds || []).includes(player.id)) tags.push('弃牌');
     if ((hand.viewedPlayerIds || []).includes(player.id)) tags.push('已看');
     if (hand.currentTurnPlayerId === player.id) tags.push('行动');
-    const turnTimer = hand.currentTurnPlayerId === player.id ? formatTurnTimer(hand.turnDeadlineAt) : '';
-    const isTurnWarning = hand.currentTurnPlayerId === player.id && getTurnRemainingSeconds(hand.turnDeadlineAt) <= 15;
 
     item.innerHTML = `
       <div class="player-main">
-        <span class="player-avatar-wrap">
-          <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
-          ${turnTimer ? `<span class="turn-countdown${isTurnWarning ? ' is-warning' : ''}" data-turn-countdown="${escapeHtml(player.id)}" aria-label="行动倒计时" aria-live="polite">${turnTimer}</span>` : ''}
-        </span>
+        <span class="player-avatar" aria-hidden="true">${avatarMarkup(player.avatarUrl)}</span>
         <div>
           <strong>${escapeHtml(player.nickname)}</strong>
           <span>${tags.join(' ')}</span>
@@ -533,7 +574,7 @@ function renderHand() {
   renderCurrentTurnText(hand);
   renderTableScene3d(hand);
   renderCards(els.myCards, hand.myCards);
-  renderHudCards(hand.myCards);
+  renderTableTurnTimer(hand);
   renderPeekedCards();
   renderActions();
 }
@@ -544,15 +585,23 @@ function renderCurrentTurnText(hand = safeHand()) {
   els.currentTurnText.textContent = current ? `${current.nickname}${timer ? ` · ${timer}` : ''}` : '-';
 }
 
-function renderHudCards(cards) {
-  if (!els.tableHudCards) return;
-  const hasCards = Array.isArray(cards) && cards.length > 0;
-  els.tableHudCards.hidden = !hasCards;
-  if (!hasCards) {
-    els.tableHudCards.innerHTML = '';
+function renderTableTurnTimer(hand = safeHand()) {
+  if (!els.tableTurnTimer) return;
+  const timer = formatTurnTimer(hand.turnDeadlineAt);
+  const visible = Boolean(state.room && state.room.hand && hand.currentTurnPlayerId && timer);
+  const isWarning = visible && getTurnRemainingSeconds(hand.turnDeadlineAt) <= 15;
+  if (state.tableScene3d && typeof state.tableScene3d.updateTurnTimer === 'function') {
+    state.tableScene3d.updateTurnTimer(timer, isWarning, visible);
+  }
+  els.tableTurnTimer.hidden = !visible;
+  if (!visible) {
+    els.tableTurnTimer.innerHTML = '';
     return;
   }
-  renderCards(els.tableHudCards, cards);
+  els.tableTurnTimer.classList.toggle('is-warning', isWarning);
+  els.tableTurnTimer.innerHTML = `
+    <strong>${timer}</strong>
+  `;
 }
 
 function renderTableScene3d(hand = safeHand()) {
@@ -564,7 +613,9 @@ function renderTableScene3d(hand = safeHand()) {
     return;
   }
   if (!state.tableScene3d) {
-    state.tableScene3d = api.createTableScene3D(els.tableScene3d);
+    state.tableScene3d = api.createTableScene3D(els.tableScene3d, {
+      tableTheme: getTableTheme(),
+    });
   }
 
   const players = (state.room.players || [])
@@ -584,6 +635,17 @@ function renderTableScene3d(hand = safeHand()) {
     hand,
     viewerId: state.playerId,
   });
+}
+
+function applyVisualConfig() {
+  document.body.dataset.tableTheme = getTableTheme();
+}
+
+function getTableTheme() {
+  const configuredTheme = window.SFG_CONFIG
+    && window.SFG_CONFIG.visual
+    && window.SFG_CONFIG.visual.tableTheme;
+  return TABLE_THEME_KEYS.has(configuredTheme) ? configuredTheme : 'classic';
 }
 
 function handleTableCardClick(playerId) {
@@ -762,7 +824,7 @@ function renderActions() {
   const isSoloShowdown = activeIds.length === 1;
   const defaultBet = isSoloShowdown ? 0 : enabledBetOptions[0] ? enabledBetOptions[0].amount : options[0];
   els.actions.appendChild(actionButton('开牌', () => {
-    send('action', { type: 'showdown' });
+    send('action', isSoloShowdown ? { type: 'showdown' } : { type: 'showdown', amount: defaultBet });
   }, 'primary', !hand.canShowdown || (!isSoloShowdown && !enabledBetOptions.length)));
   els.actions.lastChild.textContent = isSoloShowdown ? '开牌' : `开牌 ${defaultBet}`;
 }
@@ -948,6 +1010,25 @@ function actionNote(text) {
   return note;
 }
 
+function applyCoinSnapshot(payload = {}) {
+  if (!state.room || !payload.coinsByPlayerId || typeof payload.coinsByPlayerId !== 'object') return;
+  state.room.players = (state.room.players || []).map((player) => {
+    if (!Object.prototype.hasOwnProperty.call(payload.coinsByPlayerId, player.id)) return player;
+    return Object.assign({}, player, { coins: Number(payload.coinsByPlayerId[player.id]) });
+  });
+  if (state.room.hand && Number.isFinite(Number(payload.pot))) {
+    state.room.hand = Object.assign({}, state.room.hand, { pot: Number(payload.pot) });
+  }
+}
+
+function applySettlementCoins(settlement = {}) {
+  if (!state.room || !settlement.afterCoins || typeof settlement.afterCoins !== 'object') return;
+  state.room.players = (state.room.players || []).map((player) => {
+    if (!Object.prototype.hasOwnProperty.call(settlement.afterCoins, player.id)) return player;
+    return Object.assign({}, player, { coins: Number(settlement.afterCoins[player.id]) });
+  });
+}
+
 function schedulePeekResultAutoClose() {
   if (state.peekResultTimer) clearTimeout(state.peekResultTimer);
   state.peekResultTimer = setTimeout(() => {
@@ -981,7 +1062,6 @@ function clearRoomSession(status, options = {}) {
   state.peekTargetModalOpen = false;
   closePeekResultModal({ renderAfterClose: false });
   state.lastSession = null;
-  state.turnWarningKey = '';
   if (!options.keepLeaving) state.leavingRoom = false;
   state.status = status;
   localStorage.removeItem('lastRoomSession');
@@ -1266,8 +1346,7 @@ function renderTurnClock() {
   if (!state.room || !state.room.hand) return;
   const hand = safeHand();
   renderCurrentTurnText(hand);
-  updatePlayerTurnCountdown(hand);
-  warnTurnCountdown(hand);
+  renderTableTurnTimer(hand);
 }
 
 function formatTurnTimer(deadlineAt) {
@@ -1281,52 +1360,6 @@ function getTurnRemainingSeconds(deadlineAt) {
   if (!deadlineAt) return 0;
   const remaining = Math.max(0, Number(deadlineAt) - Date.now());
   return Math.ceil(remaining / 1000);
-}
-
-function updatePlayerTurnCountdown(hand) {
-  const remainingSeconds = getTurnRemainingSeconds(hand.turnDeadlineAt);
-  const timer = formatTurnTimer(hand.turnDeadlineAt);
-  document.querySelectorAll('[data-turn-countdown]').forEach((element) => {
-    if (element.dataset.turnCountdown !== hand.currentTurnPlayerId) {
-      element.remove();
-      return;
-    }
-    element.textContent = timer;
-    element.classList.toggle('is-warning', remainingSeconds <= 15);
-  });
-}
-
-function warnTurnCountdown(hand) {
-  const remainingSeconds = getTurnRemainingSeconds(hand.turnDeadlineAt);
-  const warningKey = `${hand.id}:${hand.currentTurnPlayerId}:${hand.turnDeadlineAt}:${remainingSeconds}`;
-  if (!hand.currentTurnPlayerId || remainingSeconds > 15 || remainingSeconds <= 0 || state.turnWarningKey === warningKey) return;
-  state.turnWarningKey = warningKey;
-  playTurnWarningSound();
-}
-
-function playTurnWarningSound() {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
-  if (!state.turnWarningAudioContext) state.turnWarningAudioContext = new AudioContextClass();
-  const context = state.turnWarningAudioContext;
-  if (context.state === 'suspended') context.resume().catch(() => {});
-
-  const startAt = context.currentTime + 0.01;
-  for (let index = 0; index < 3; index += 1) {
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const beepStart = startAt + index * 0.16;
-    const beepEnd = beepStart + 0.08;
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, beepStart);
-    gain.gain.setValueAtTime(0.0001, beepStart);
-    gain.gain.exponentialRampToValueAtTime(0.18, beepStart + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, beepEnd);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start(beepStart);
-    oscillator.stop(beepEnd + 0.02);
-  }
 }
 
 function formatCoins(value) {

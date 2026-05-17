@@ -14,6 +14,10 @@ const TABLE_CARD_SPACING = 0.36;
 const VIEWED_CARD_SPACING = 0.18;
 const TABLE_RADIUS = 3.05;
 const LABEL_RADIUS = 4.15;
+const DECK_SCALE = 1.08;
+const TABLETOP_PROP_Y = 0.3;
+const TABLE_TIMER_SIZE = { width: CARD_SIZE.height * DECK_SCALE, height: CARD_SIZE.width * DECK_SCALE };
+const TABLE_TIMER_POSITION = new THREE.Vector3(-0.58, TABLETOP_PROP_Y, -0.22);
 const DEFAULT_CAMERA_PITCH = 0.62;
 const DEFAULT_CAMERA_DISTANCE = 8.9;
 const DEFAULT_CAMERA_TARGET_Y = 0.04;
@@ -30,19 +34,22 @@ const CHIP_PALETTES = [
   { face: 0xf3f0e6, edge: 0x8a8272, ink: '#24221d' },
   { face: 0x242832, edge: 0x0e1118, ink: '#f7e7b0' },
 ];
+const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray']);
 
-function createTableScene3D(container) {
-  return new TableScene3D(container);
+function createTableScene3D(container, options = {}) {
+  return new TableScene3D(container, options);
 }
 
 class TableScene3D {
-  constructor(container) {
+  constructor(container, options = {}) {
     this.container = container;
+    this.tableTheme = normalizeTableTheme(options.tableTheme || window.SFG_CONFIG?.visual?.tableTheme);
     this.scene = new THREE.Scene();
     this.scene.background = null;
     this.playersGroup = new THREE.Group();
     this.cardsGroup = new THREE.Group();
     this.potGroup = new THREE.Group();
+    this.turnTimerGroup = new THREE.Group();
     this.labelLayer = document.createElement('div');
     this.labelLayer.className = 'table-scene-label-layer';
     this.labelsById = new Map();
@@ -58,6 +65,9 @@ class TableScene3D {
     this.lastSettlementAt = 0;
     this.potCollectAnimation = null;
     this.dealStartedAt = 0;
+    this.turnTimerText = '';
+    this.turnTimerWarning = false;
+    this.lastSnapshot = null;
     this.disposed = false;
     this.drag = null;
 
@@ -85,6 +95,24 @@ class TableScene3D {
   }
 
   installScene() {
+    if (this.tableTheme === 'red_wood_tray') this.installRedWoodTrayScene();
+    else this.installClassicScene();
+
+    this.deck = this.createCardMesh(null, true);
+    this.deck.position.set(0, TABLETOP_PROP_Y, -0.18);
+    this.deck.rotation.x = -Math.PI / 2;
+    this.deck.rotation.z = -0.12;
+    this.deck.scale.set(DECK_SCALE, DECK_SCALE, DECK_SCALE);
+    this.scene.add(this.deck);
+    this.installTurnTimerDevice();
+
+    this.scene.add(this.playersGroup);
+    this.scene.add(this.cardsGroup);
+    this.scene.add(this.potGroup);
+    this.scene.add(this.turnTimerGroup);
+  }
+
+  installClassicScene() {
     const ambient = new THREE.HemisphereLight(0xfff2cb, 0x06251f, 1.55);
     this.scene.add(ambient);
 
@@ -190,17 +218,126 @@ class TableScene3D {
     rail.position.y = 0.2;
     rail.castShadow = true;
     this.scene.add(rail);
+  }
 
-    this.deck = this.createCardMesh(null, true);
-    this.deck.position.set(0, 0.3, -0.18);
-    this.deck.rotation.x = -Math.PI / 2;
-    this.deck.rotation.z = -0.12;
-    this.deck.scale.set(1.08, 1.08, 1.08);
-    this.scene.add(this.deck);
+  installRedWoodTrayScene() {
+    const ambient = new THREE.HemisphereLight(0xfff2cb, 0x1a2417, 1.48);
+    this.scene.add(ambient);
 
-    this.scene.add(this.playersGroup);
-    this.scene.add(this.cardsGroup);
-    this.scene.add(this.potGroup);
+    const keyLight = new THREE.DirectionalLight(0xffefc1, 2.45);
+    keyLight.position.set(-4.8, 7.4, 3.8);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    this.scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0xb8ff9d, 0.86);
+    rimLight.position.set(4, 4, -5);
+    this.scene.add(rimLight);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(18, 14),
+      new THREE.MeshStandardMaterial({
+        color: 0x26301d,
+        roughness: 0.92,
+        metalness: 0.04,
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.24;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    const backWall = new THREE.Mesh(
+      new THREE.PlaneGeometry(18, 6),
+      new THREE.MeshStandardMaterial({
+        map: createForestBackdropTexture(),
+        roughness: 0.96,
+        metalness: 0.02,
+      })
+    );
+    backWall.position.set(0, 2.65, -6.6);
+    backWall.receiveShadow = true;
+    this.scene.add(backWall);
+
+    const sideWall = new THREE.Mesh(
+      new THREE.PlaneGeometry(14, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0x151d13,
+        roughness: 0.9,
+        metalness: 0.02,
+      })
+    );
+    sideWall.position.set(-8.4, 2.65, 0);
+    sideWall.rotation.y = Math.PI / 2;
+    sideWall.receiveShadow = true;
+    this.scene.add(sideWall);
+
+    const rug = new THREE.Mesh(
+      new THREE.PlaneGeometry(9.2, 5.8),
+      new THREE.MeshStandardMaterial({
+        color: 0x2a2118,
+        roughness: 0.94,
+        metalness: 0.01,
+      })
+    );
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.y = -0.22;
+    rug.receiveShadow = true;
+    this.scene.add(rug);
+
+    const woodMaterial = new THREE.MeshStandardMaterial({
+      map: createWoodTexture(),
+      roughness: 0.48,
+      metalness: 0.12,
+    });
+    const darkWoodMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2c160d,
+      roughness: 0.62,
+      metalness: 0.08,
+    });
+    const feltMaterial = new THREE.MeshStandardMaterial({
+      map: createRedFeltTexture(),
+      roughness: 0.98,
+      metalness: 0.01,
+    });
+
+    const tableGroup = new THREE.Group();
+    const tableBase = new THREE.Mesh(new THREE.BoxGeometry(8.65, 0.36, 5.35), darkWoodMaterial);
+    tableBase.position.y = -0.02;
+    tableBase.castShadow = true;
+    tableBase.receiveShadow = true;
+    tableGroup.add(tableBase);
+
+    const felt = new THREE.Mesh(new THREE.BoxGeometry(7.28, 0.055, 4.14), feltMaterial);
+    felt.position.y = 0.22;
+    felt.receiveShadow = true;
+    tableGroup.add(felt);
+
+    [
+      { size: [8.7, 0.48, 0.5], position: [0, 0.36, -2.42] },
+      { size: [8.7, 0.48, 0.5], position: [0, 0.36, 2.42] },
+      { size: [0.5, 0.48, 5.34], position: [-4.1, 0.36, 0] },
+      { size: [0.5, 0.48, 5.34], position: [4.1, 0.36, 0] },
+    ].forEach((part) => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(...part.size), woodMaterial);
+      rail.position.set(...part.position);
+      rail.castShadow = true;
+      rail.receiveShadow = true;
+      tableGroup.add(rail);
+    });
+
+    [
+      { size: [7.55, 0.08, 0.06], position: [0, 0.62, -2.08] },
+      { size: [7.55, 0.08, 0.06], position: [0, 0.62, 2.08] },
+      { size: [0.06, 0.08, 4.28], position: [-3.73, 0.62, 0] },
+      { size: [0.06, 0.08, 4.28], position: [3.73, 0.62, 0] },
+    ].forEach((part) => {
+      const groove = new THREE.Mesh(new THREE.BoxGeometry(...part.size), darkWoodMaterial);
+      groove.position.set(...part.position);
+      tableGroup.add(groove);
+    });
+
+    this.scene.add(tableGroup);
   }
 
   bindEvents() {
@@ -244,10 +381,12 @@ class TableScene3D {
   }
 
   update(snapshot = {}) {
+    this.lastSnapshot = snapshot;
     if (!snapshot.room) {
       this.clearPlayers();
       this.clearCards();
       this.clearPot();
+      this.updateTurnTimer('', false, false);
       return;
     }
 
@@ -271,6 +410,11 @@ class TableScene3D {
     }
     this.renderPlayers(players, hand, snapshot.viewerId, config);
     this.renderPot(hand, config, players);
+    this.updateTurnTimer(
+      formatSceneTurnTimer(hand.turnDeadlineAt),
+      getSceneTurnRemainingSeconds(hand.turnDeadlineAt) <= 15,
+      Boolean(hand.currentTurnPlayerId && hand.turnDeadlineAt)
+    );
     this.renderCards(players, hand, snapshot.viewerId);
   }
 
@@ -279,6 +423,7 @@ class TableScene3D {
     const activeIds = new Set(hand.activePlayerIds || []);
     const foldedIds = new Set(hand.foldedPlayerIds || []);
     const viewedIds = new Set(hand.viewedPlayerIds || []);
+    const nextTurnPlayerId = findNextTurnPlayerId(players, hand, activeIds);
 
     players.forEach((player, index) => {
       const seat = seatPosition(index, players.length, LABEL_RADIUS, 0.86);
@@ -310,6 +455,7 @@ class TableScene3D {
       label.className = 'table-seat-label';
       label.classList.toggle('is-me', player.id === viewerId);
       label.classList.toggle('is-turn', player.id === hand.currentTurnPlayerId);
+      label.classList.toggle('is-next-turn', player.id === nextTurnPlayerId);
       label.classList.toggle('is-folded', foldedIds.has(player.id));
       label.classList.toggle('is-viewed', viewedIds.has(player.id));
       label.classList.toggle('is-active', activeIds.has(player.id));
@@ -335,7 +481,7 @@ class TableScene3D {
 
     const amount = pot || collect.pot || 0;
     const chips = this.createChipStack(amount, config, POT_CHIP_LIMIT, 9);
-    chips.position.set(0.62, 0.31, -0.12);
+    chips.position.set(0.62, TABLETOP_PROP_Y, -0.12);
     chips.rotation.y = -0.24;
 
     if (!pot && collect) {
@@ -459,6 +605,101 @@ class TableScene3D {
     );
   }
 
+  installTurnTimerDevice() {
+    this.turnTimerCanvas = document.createElement('canvas');
+    this.turnTimerCanvas.width = 512;
+    this.turnTimerCanvas.height = 296;
+    this.turnTimerContext = this.turnTimerCanvas.getContext('2d');
+    this.turnTimerTexture = new THREE.CanvasTexture(this.turnTimerCanvas);
+    this.turnTimerTexture.colorSpace = THREE.SRGBColorSpace;
+    this.turnTimerTexture.anisotropy = 4;
+    this.turnTimerMaterial = new THREE.MeshBasicMaterial({
+      map: this.turnTimerTexture,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const timerPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(TABLE_TIMER_SIZE.width, TABLE_TIMER_SIZE.height),
+      this.turnTimerMaterial
+    );
+    timerPlane.renderOrder = 19;
+    this.turnTimerGroup.add(timerPlane);
+    this.turnTimerGroup.position.copy(TABLE_TIMER_POSITION);
+    this.turnTimerGroup.rotation.set(-Math.PI / 2, 0, Math.PI / 2 - 0.12);
+    this.turnTimerGroup.visible = false;
+    this.drawTurnTimerDevice('00:00', false);
+  }
+
+  updateTurnTimer(text, isWarning = false, visible = true) {
+    const shouldShow = Boolean(visible && text);
+    this.turnTimerGroup.visible = shouldShow;
+    if (!shouldShow) return;
+    if (text === this.turnTimerText && isWarning === this.turnTimerWarning) return;
+    this.turnTimerText = text;
+    this.turnTimerWarning = isWarning;
+    this.drawTurnTimerDevice(text, isWarning);
+  }
+
+  drawTurnTimerDevice(text, isWarning) {
+    const ctx = this.turnTimerContext;
+    const width = this.turnTimerCanvas.width;
+    const height = this.turnTimerCanvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.34)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 18;
+    roundRect(ctx, 26, 24, width - 52, height - 48, 34);
+    const bodyGradient = ctx.createLinearGradient(0, 24, 0, height - 24);
+    bodyGradient.addColorStop(0, '#a76b32');
+    bodyGradient.addColorStop(0.24, '#7e4a23');
+    bodyGradient.addColorStop(1, '#452413');
+    ctx.fillStyle = bodyGradient;
+    ctx.fill();
+    ctx.restore();
+
+    roundRect(ctx, 38, 38, width - 76, height - 76, 28);
+    ctx.strokeStyle = isWarning ? 'rgba(255, 82, 82, 0.9)' : 'rgba(225, 93, 78, 0.58)';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+
+    roundRect(ctx, 70, 78, width - 140, 116, 16);
+    const screenGradient = ctx.createLinearGradient(0, 78, 0, 194);
+    screenGradient.addColorStop(0, '#0a3519');
+    screenGradient.addColorStop(0.5, '#062412');
+    screenGradient.addColorStop(1, '#06150c');
+    ctx.fillStyle = screenGradient;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(71, 144, 64, 0.36)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    ctx.font = '900 72px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isWarning ? '#ff4646' : '#42ff5d';
+    ctx.shadowColor = isWarning ? 'rgba(255, 70, 70, 0.62)' : 'rgba(66, 255, 93, 0.5)';
+    ctx.shadowBlur = 14;
+    ctx.fillText(text, width / 2, 137);
+    ctx.shadowBlur = 0;
+
+    [202, 256, 310].forEach((x) => {
+      ctx.beginPath();
+      ctx.arc(x, 232, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#172014';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 210, 128, 0.12)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = 'rgba(255, 226, 155, 0.14)';
+    ctx.fillRect(45, 42, width - 90, 44);
+    this.turnTimerTexture.needsUpdate = true;
+  }
+
   getLabel(playerId) {
     if (this.labelsById.has(playerId)) return this.labelsById.get(playerId);
 
@@ -509,8 +750,8 @@ class TableScene3D {
     this.updateCamera();
     this.animateCards(now);
     this.animatePotCollect(now);
-    this.renderer.render(this.scene, this.camera);
     this.positionLabels();
+    this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(this.renderFrame);
   }
 
@@ -573,8 +814,8 @@ class TableScene3D {
           stackZ + Math.cos((chipIndex + planIndex) * 1.3) * 0.005
         );
         chip.rotation.y = (chipIndex % 4) * 0.18;
-        chip.castShadow = true;
-        chip.receiveShadow = true;
+        chip.castShadow = false;
+        chip.receiveShadow = false;
         group.add(chip);
       }
 
@@ -627,13 +868,19 @@ class TableScene3D {
 
   positionLabels() {
     const rect = this.container.getBoundingClientRect();
+    const topInset = 6;
+    const bottomInset = document.body.classList.contains('is-in-room') ? Math.min(190, rect.height * 0.28) : 6;
     this.labelsById.forEach((label) => {
       if (label.hidden || !label.__worldPosition) return;
       const projected = label.__worldPosition.clone().project(this.camera);
       const labelWidth = label.offsetWidth || 140;
       const labelHeight = label.offsetHeight || 52;
       const x = clamp((projected.x * 0.5 + 0.5) * rect.width, labelWidth / 2 + 6, rect.width - labelWidth / 2 - 6);
-      const y = clamp((-projected.y * 0.5 + 0.5) * rect.height, labelHeight / 2 + 6, rect.height - labelHeight / 2 - 6);
+      const y = clamp(
+        (-projected.y * 0.5 + 0.5) * rect.height,
+        labelHeight / 2 + topInset,
+        rect.height - labelHeight / 2 - bottomInset
+      );
       label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
       label.style.zIndex = String(Math.round((1 - projected.z) * 1000));
     });
@@ -662,6 +909,8 @@ class TableScene3D {
     this.container.removeEventListener('pointercancel', this.onPointerUp);
     this.container.removeEventListener('wheel', this.onWheel);
     this.clearCards();
+    this.turnTimerTexture?.dispose();
+    this.turnTimerMaterial?.dispose();
     this.materialsByDenomination.forEach((materials) => {
       materials.face.map?.dispose();
       materials.face.dispose();
@@ -724,6 +973,119 @@ function createCardTexture(card, isBack) {
   return texture;
 }
 
+function createWoodTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+  gradient.addColorStop(0, '#6b381e');
+  gradient.addColorStop(0.34, '#9a5a2e');
+  gradient.addColorStop(0.62, '#5c2d17');
+  gradient.addColorStop(1, '#a56837');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < canvas.height; y += 6) {
+    ctx.strokeStyle = y % 18 === 0 ? 'rgba(45, 20, 8, 0.36)' : 'rgba(255, 218, 158, 0.16)';
+    ctx.lineWidth = y % 18 === 0 ? 2 : 1;
+    ctx.beginPath();
+    for (let x = 0; x <= canvas.width; x += 20) {
+      const wave = Math.sin((x + y * 3) * 0.025) * 4;
+      if (x === 0) ctx.moveTo(x, y + wave);
+      else ctx.lineTo(x, y + wave);
+    }
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2.8, 1);
+  return texture;
+}
+
+function createRedFeltTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#6f1514';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let i = 0; i < 9000; i += 1) {
+    const shade = 34 + Math.floor(Math.random() * 64);
+    const alpha = 0.08 + Math.random() * 0.18;
+    ctx.fillStyle = `rgba(${shade + 80}, ${shade * 0.42}, ${shade * 0.36}, ${alpha})`;
+    ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 1, 1);
+  }
+
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = '#c44936';
+  for (let y = 0; y < canvas.height; y += 7) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + Math.sin(y) * 1.5);
+    ctx.lineTo(canvas.width, y + Math.cos(y) * 1.5);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(6, 4);
+  return texture;
+}
+
+function createForestBackdropTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, '#3d4f22');
+  gradient.addColorStop(0.45, '#18210f');
+  gradient.addColorStop(1, '#0d1009');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let i = 0; i < 120; i += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height * 0.72;
+    const radius = 12 + Math.random() * 48;
+    const leaf = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    leaf.addColorStop(0, `rgba(${90 + Math.random() * 80}, ${120 + Math.random() * 80}, 45, 0.24)`);
+    leaf.addColorStop(1, 'rgba(12, 20, 9, 0)');
+    ctx.fillStyle = leaf;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function normalizeTableTheme(theme) {
+  return TABLE_THEME_KEYS.has(theme) ? theme : 'classic';
+}
+
+function formatSceneTurnTimer(deadlineAt) {
+  if (!deadlineAt) return '';
+  const remainingSeconds = getSceneTurnRemainingSeconds(deadlineAt);
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function getSceneTurnRemainingSeconds(deadlineAt) {
+  if (!deadlineAt) return 0;
+  return Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000));
+}
+
 function disposeMaterial(material) {
   const materials = Array.isArray(material) ? material : [material];
   const disposed = new Set();
@@ -753,6 +1115,14 @@ function seatPosition(index, count, radius, zScale) {
     z: Math.sin(angle) * radius * zScale,
     angle,
   };
+}
+
+function findNextTurnPlayerId(players, hand, activeIds) {
+  if (!hand || !hand.currentTurnPlayerId || activeIds.size < 2) return '';
+  const orderedActivePlayers = players.filter((player) => activeIds.has(player.id));
+  const currentIndex = orderedActivePlayers.findIndex((player) => player.id === hand.currentTurnPlayerId);
+  if (currentIndex === -1) return orderedActivePlayers[0] ? orderedActivePlayers[0].id : '';
+  return orderedActivePlayers[(currentIndex + 1) % orderedActivePlayers.length].id;
 }
 
 function playerStatus(player, hand) {

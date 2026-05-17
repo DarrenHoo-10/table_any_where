@@ -74,6 +74,7 @@ const state = {
   rotateHintDismissed: localStorage.getItem('rotateHintDismissed') === 'true',
   tableScene3d: null,
   roomCopyHintTimer: null,
+  leaveReloadTimer: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -364,6 +365,7 @@ function handleMessage(message) {
 
   if (message.type === 'left_room') {
     clearRoomSession('已离开房间');
+    reloadAfterLeavingRoom();
   }
 
   if (message.type === 'error') {
@@ -1048,8 +1050,14 @@ function closePeekResultModal(options = {}) {
 
 function leaveRoom() {
   state.leavingRoom = true;
-  send('leave_room');
+  const sent = send('leave_room');
   clearRoomSession('已离开房间', { keepLeaving: true });
+  if (state.leaveReloadTimer) clearTimeout(state.leaveReloadTimer);
+  if (sent) {
+    state.leaveReloadTimer = setTimeout(reloadAfterLeavingRoom, 1500);
+  } else {
+    reloadAfterLeavingRoom();
+  }
   render();
 }
 
@@ -1065,6 +1073,14 @@ function clearRoomSession(status, options = {}) {
   if (!options.keepLeaving) state.leavingRoom = false;
   state.status = status;
   localStorage.removeItem('lastRoomSession');
+}
+
+function reloadAfterLeavingRoom() {
+  if (state.leaveReloadTimer) {
+    clearTimeout(state.leaveReloadTimer);
+    state.leaveReloadTimer = null;
+  }
+  window.location.reload();
 }
 
 function beginNewRoomRequest(status) {

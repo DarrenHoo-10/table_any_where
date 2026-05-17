@@ -148,6 +148,8 @@ class RoomManager {
   leaveRoom(playerId) {
     const room = this.getPlayerRoom(playerId);
     if (!room) return null;
+    const leavingIndex = room.players.findIndex((player) => player.id === playerId);
+    const leavingHost = room.hostId === playerId;
 
     if (room.status === 'playing') {
       const hand = room.hand;
@@ -172,10 +174,14 @@ class RoomManager {
       player.seat = index + 1;
     });
 
-    if (room.players.length === 0 || room.hostId === playerId) {
+    if (room.players.length === 0) {
       this.rooms.delete(room.id);
-      room.players.forEach((player) => this.playerRoom.delete(player.id));
       return null;
+    }
+
+    if (leavingHost) {
+      const nextHostIndex = Math.max(0, leavingIndex) % room.players.length;
+      room.hostId = room.players[nextHostIndex].id;
     }
 
     return room;

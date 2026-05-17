@@ -238,13 +238,19 @@ test('new room requests clear stale saved sessions and ignore stale room states'
   const roomStateBlock = getMessageBranchBlock(appJs, "message.type === 'room_state'");
   const leaveRoomBlock = getFunctionBlock(appJs, 'leaveRoom');
   const beginNewRoomRequestBlock = getFunctionBlock(appJs, 'beginNewRoomRequest');
+  const leftRoomBlock = getMessageBranchBlock(appJs, "message.type === 'left_room'");
 
   assert.match(createRoomBlock, /beginNewRoomRequest\('正在创建房间\.\.\.'\);/);
   assert.match(joinRoomBlock, /beginNewRoomRequest\('正在加入房间\.\.\.'\);/);
   assert.match(backHomeBlock, /clearRoomSession\('已返回首页'\);/);
   assert.match(leaveRoomBlock, /clearRoomSession\('已离开房间', \{ keepLeaving: true \}\);/);
+  assert.match(leaveRoomBlock, /state\.leaveReloadTimer = setTimeout\(reloadAfterLeavingRoom, 1500\);/);
+  assert.match(leftRoomBlock, /clearRoomSession\('已离开房间'\);/);
+  assert.match(leftRoomBlock, /reloadAfterLeavingRoom\(\);/);
   assert.match(appJs, /if \(!options\.keepLeaving\) state\.leavingRoom = false;/);
   assert.match(appJs, /localStorage\.removeItem\('lastRoomSession'\);/);
+  assert.match(appJs, /function reloadAfterLeavingRoom\(\)/);
+  assert.match(appJs, /window\.location\.reload\(\);/);
   assert.match(beginNewRoomRequestBlock, /clearRoomSession\(status\);[\s\S]*state\.leavingRoom = false;/);
   assert.match(welcomeBlock, /state\.status = '已进入房间';/);
   assert.match(roomStateBlock, /if \(!shouldAcceptRoomState\(payload\)\) return;/);

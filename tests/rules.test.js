@@ -471,6 +471,34 @@ test('reconnected player is not kicked by a stale disconnect timer', () => {
   assert.equal(room.players.some((player) => player.id === guest.id), true);
 });
 
+test('host leaving transfers ownership to the next seated player', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+  const { player: tail } = manager.joinRoom(room.id, { nickname: 'C' });
+
+  const updatedRoom = manager.leaveRoom(host.id);
+
+  assert.equal(updatedRoom, room);
+  assert.equal(manager.rooms.get(room.id), room);
+  assert.equal(room.hostId, guest.id);
+  assert.deepEqual(room.players.map((player) => player.id), [guest.id, tail.id]);
+  assert.deepEqual(room.players.map((player) => player.seat), [1, 2]);
+  assert.equal(manager.getPlayerRoom(host.id), null);
+  assert.equal(manager.getPlayerRoom(guest.id), room);
+});
+
+test('leaving as the final player destroys the room and player mappings', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2 });
+
+  const updatedRoom = manager.leaveRoom(host.id);
+
+  assert.equal(updatedRoom, null);
+  assert.equal(manager.rooms.has(room.id), false);
+  assert.equal(manager.getPlayerRoom(host.id), null);
+});
+
 test('current player leaving advances turn to the next active seat', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 0 });

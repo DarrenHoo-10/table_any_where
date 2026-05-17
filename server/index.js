@@ -61,6 +61,7 @@ function handleMessage(socket, message) {
   const payload = message.payload || {};
 
   if (type === 'create_room') {
+    detachSocketFromCurrentRoom(socket);
     const result = manager.createRoom(payload.player, payload.config || payload);
     bindSocket(socket, result.room.id, result.player);
     send(socket, 'welcome', {
@@ -73,6 +74,7 @@ function handleMessage(socket, message) {
   }
 
   if (type === 'join_room') {
+    detachSocketFromCurrentRoom(socket);
     const result = manager.joinRoom(payload.roomId, payload.player || payload);
     bindSocket(socket, result.room.id, result.player);
     send(socket, 'welcome', {
@@ -85,6 +87,7 @@ function handleMessage(socket, message) {
   }
 
   if (type === 'reconnect') {
+    detachSocketFromCurrentRoom(socket);
     const result = manager.reconnect(payload.roomId, payload.playerId, payload.playerToken);
     bindSocket(socket, result.room.id, result.player);
     send(socket, 'welcome', {
@@ -229,6 +232,25 @@ function bindSocket(socket, roomId, player) {
   socket.playerId = player.id;
   player.connected = true;
   playerSockets.set(player.id, socket);
+}
+
+function detachSocketFromCurrentRoom(socket) {
+  if (!socket.playerId) return;
+  const playerId = socket.playerId;
+  const previousRoomId = socket.roomId;
+  playerSockets.delete(playerId);
+  clearDisconnectedPlayerKick(playerId);
+  socket.playerId = null;
+  socket.roomId = null;
+
+  const room = manager.leaveRoom(playerId);
+  if (room) {
+    broadcastRoom(room, 'room_state');
+    if (room.hand) broadcastRoom(room, 'hand_state');
+    scheduleRoomTurnTimer(room);
+  } else {
+    clearRoomTurnTimer(previousRoomId);
+  }
 }
 
 function requireIdentity(socket) {

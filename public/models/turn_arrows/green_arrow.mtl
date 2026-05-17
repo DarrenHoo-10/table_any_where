@@ -1,0 +1,5 @@
+newmtl GreenMaterial
+Kd 0.0 0.8 0.0
+Ka 0.2 0.2 0.2
+Ks 0.6 0.6 0.6
+Ns 100

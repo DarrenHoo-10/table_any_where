@@ -132,6 +132,19 @@ class RoomManager {
     return room;
   }
 
+  kickDisconnectedPlayer(playerId) {
+    const room = this.getPlayerRoom(playerId);
+    if (!room) return null;
+    const player = room.players.find((item) => item.id === playerId);
+    if (!player || player.connected) return null;
+    const roomId = room.id;
+    return {
+      roomId,
+      room: this.leaveRoom(playerId),
+      player,
+    };
+  }
+
   leaveRoom(playerId) {
     const room = this.getPlayerRoom(playerId);
     if (!room) return null;

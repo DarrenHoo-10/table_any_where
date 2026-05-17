@@ -10,6 +10,8 @@ const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const manager = new RoomManager();
 const playerSockets = new Map();
 const roomTurnTimers = new Map();
+const disconnectKickTimers = new Map();
+const DISCONNECT_KICK_DELAY_MS = Number(process.env.DISCONNECT_KICK_DELAY_MS || 5000);
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -45,9 +47,12 @@ wss.on('connection', (socket) => {
 
   socket.on('close', () => {
     if (!socket.playerId) return;
-    playerSockets.delete(socket.playerId);
-    const room = manager.markDisconnected(socket.playerId);
+    const playerId = socket.playerId;
+    if (playerSockets.get(playerId) !== socket) return;
+    playerSockets.delete(playerId);
+    const room = manager.markDisconnected(playerId);
     if (room) broadcastRoom(room, 'room_state');
+    scheduleDisconnectedPlayerKick(playerId);
   });
 });
 
@@ -128,6 +133,8 @@ function handleMessage(socket, message) {
       winnerId: result.winnerId,
       loserId: result.loserId,
       amount: result.amount ?? payload.amount,
+      pot: room.hand ? room.hand.pot : 0,
+      coinsByPlayerId: getCoinsByPlayerId(room),
     });
     if (Array.isArray(result.privateMessages)) {
       result.privateMessages.forEach((message) => {
@@ -217,6 +224,7 @@ function getCacheControl(ext) {
 
 function bindSocket(socket, roomId, player) {
   if (socket.playerId && socket.playerId !== player.id) playerSockets.delete(socket.playerId);
+  clearDisconnectedPlayerKick(player.id);
   socket.roomId = roomId;
   socket.playerId = player.id;
   player.connected = true;
@@ -261,6 +269,42 @@ function clearRoomTurnTimer(roomId) {
   roomTurnTimers.delete(roomId);
 }
 
+function scheduleDisconnectedPlayerKick(playerId) {
+  clearDisconnectedPlayerKick(playerId);
+  const timer = setTimeout(() => handleDisconnectedPlayerKick(playerId), DISCONNECT_KICK_DELAY_MS);
+  disconnectKickTimers.set(playerId, timer);
+}
+
+function clearDisconnectedPlayerKick(playerId) {
+  if (!disconnectKickTimers.has(playerId)) return;
+  clearTimeout(disconnectKickTimers.get(playerId));
+  disconnectKickTimers.delete(playerId);
+}
+
+function handleDisconnectedPlayerKick(playerId) {
+  disconnectKickTimers.delete(playerId);
+
+  let result = null;
+  try {
+    result = manager.kickDisconnectedPlayer(playerId);
+  } catch (error) {
+    return;
+  }
+
+  if (!result) return;
+  const room = result.room;
+  if (!room) {
+    clearRoomTurnTimer(result.roomId);
+    return;
+  }
+
+  if (room.lastSettlement) broadcastRoom(room, 'hand_settlement', room.lastSettlement);
+  if (room.finalSettlement) broadcastRoom(room, 'final_settlement', room.finalSettlement);
+  broadcastRoom(room, 'room_state');
+  if (room.hand) broadcastRoom(room, 'hand_state');
+  scheduleRoomTurnTimer(room);
+}
+
 function handleTurnTimeout(roomId) {
   roomTurnTimers.delete(roomId);
 
@@ -281,6 +325,8 @@ function handleTurnTimeout(roomId) {
   broadcastRoom(room, 'action_result', {
     playerId: result.playerId,
     action: 'timeout_fold',
+    pot: room.hand ? room.hand.pot : 0,
+    coinsByPlayerId: getCoinsByPlayerId(room),
   });
   if (room.lastSettlement) broadcastRoom(room, 'hand_settlement', room.lastSettlement);
   if (room.finalSettlement) broadcastRoom(room, 'final_settlement', room.finalSettlement);
@@ -292,6 +338,10 @@ function handleTurnTimeout(roomId) {
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, { 'content-type': MIME_TYPES['.json'] });
   res.end(JSON.stringify(data));
+}
+
+function getCoinsByPlayerId(room) {
+  return Object.fromEntries(room.players.map((player) => [player.id, player.coins]));
 }
 
 httpServer.listen(PORT, HOST, () => {

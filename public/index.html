@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#10251f">
     <title>Straight Flush Web Game</title>
     <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js"></script>
     <script type="module" src="/tableScene3d.js"></script>
     <script defer src="/app.js"></script>
   </head>
@@ -112,8 +113,11 @@
 
       <section id="tableView" class="view table-view" hidden>
         <aside class="rotate-phone-hint" aria-label="横屏提示">
-          <strong>横屏体验更好</strong>
-          <span>可以继续竖屏玩，旋转手机会获得完整牌桌视角。</span>
+          <div>
+            <strong>横屏体验更好</strong>
+            <span>可以继续竖屏玩，旋转手机会获得完整牌桌视角。</span>
+          </div>
+          <button id="dismissRotateHintBtn" type="button" aria-label="关闭横屏提示">×</button>
         </aside>
 
         <section id="roomPanel" class="room-panel" role="button" tabindex="0" aria-label="点击复制房间号">
@@ -122,6 +126,7 @@
             <h2 id="roomCodeText">------</h2>
             <p data-room-meta class="room-meta">等待同步房间配置</p>
           </div>
+          <button id="roomPanelToggleBtn" class="room-panel-toggle" type="button" aria-expanded="true" aria-label="折叠房间信息">-</button>
         </section>
         <div class="room-actions">
           <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
@@ -166,7 +171,7 @@
             <div class="table-scene-status">加载 3D 牌桌...</div>
           </section>
 
-          <div id="tableHudCards" class="table-hud-cards" aria-label="我的牌面" hidden></div>
+          <div id="tableTurnTimer" class="table-turn-timer" aria-live="polite" hidden></div>
 
           <div class="table-metrics">
             <article>

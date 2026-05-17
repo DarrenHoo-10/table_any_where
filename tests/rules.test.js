@@ -439,6 +439,38 @@ test('active player leaving during a hand folds and settles when one player rema
   assert.equal(host.coins, hostBefore + pot);
 });
 
+test('disconnected active player can be kicked and settled as a leave fold', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2, bonus: 0 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  startReadyHand(manager, room, host.id);
+  const pot = room.hand.pot;
+  const hostBefore = host.coins;
+  manager.markDisconnected(guest.id);
+
+  const result = manager.kickDisconnectedPlayer(guest.id);
+
+  assert.equal(result.room, room);
+  assert.equal(room.players.some((player) => player.id === guest.id), false);
+  assert.equal(room.status, 'between_hands');
+  assert.equal(room.lastSettlement.reason, 'player_left');
+  assert.deepEqual(room.lastSettlement.winnerIds, [host.id]);
+  assert.equal(host.coins, hostBefore + pot);
+});
+
+test('reconnected player is not kicked by a stale disconnect timer', () => {
+  const manager = new RoomManager();
+  const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 2 });
+  const { player: guest } = manager.joinRoom(room.id, { nickname: 'B' });
+
+  manager.markDisconnected(guest.id);
+  manager.reconnect(room.id, guest.id, guest.token);
+
+  assert.equal(manager.kickDisconnectedPlayer(guest.id), null);
+  assert.equal(room.players.some((player) => player.id === guest.id), true);
+});
+
 test('current player leaving advances turn to the next active seat', () => {
   const manager = new RoomManager();
   const { room, player: host } = manager.createRoom({ nickname: 'A' }, { maxPlayers: 3, bonus: 0 });

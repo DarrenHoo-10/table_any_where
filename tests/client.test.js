@@ -92,6 +92,18 @@ test('setup intent waits for explicit create and preferred avatar is seated firs
   assert.match(syncSelectedAvatarBlock, /if \(!assignedAvatar && \(state\.autoSeatAvatar \|\| state\.awaitingAutoAvatar\)\) return;/);
 });
 
+test('classic config and app scripts do not redeclare top-level constants', () => {
+  const configJs = fs.readFileSync(path.join(PUBLIC_DIR, 'config.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const topLevelConstants = (source) => [...source.matchAll(/^const\s+([A-Z][A-Z0-9_]*)\s*=/gm)]
+    .map((match) => match[1]);
+  const configConstants = topLevelConstants(configJs);
+  const appConstants = topLevelConstants(appJs);
+  const collisions = configConstants.filter((name) => appConstants.includes(name));
+
+  assert.deepEqual(collisions, []);
+});
+
 test('create room form no longer exposes custom player count', () => {
   const html = fs.readFileSync(GAME_HTML, 'utf8');
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');

@@ -23,9 +23,16 @@ const DEFAULT_CAMERA_PITCH = 0.62;
 const DEFAULT_CAMERA_DISTANCE = 8.9;
 const DEFAULT_CAMERA_TARGET_Y = 0.04;
 const ZHA_CAMERA_TRANSITION_MS = 1250;
+const ZHA_ORBIT_MIN_DISTANCE = 5.2;
+const ZHA_ORBIT_MAX_DISTANCE = 12.5;
+const ZHA_ORBIT_MIN_PITCH = 0.38;
+const ZHA_ORBIT_MAX_PITCH = 1.2;
 const ZHA_ROOM_SEATS = 8;
 const ZHA_ROOM_FLOOR_Y = -0.28;
-const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = 0.18;
+const ZHA_ROOM_CHAIR_Y = -0.02;
+const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = -0.08;
+const ZHA_ROOM_CHAIR_RADIUS = 4.05;
+const ZHA_ROOM_CHAIR_Z_SCALE = 1;
 const ZHA_CHAIR_TARGET_HEIGHT = 1.72;
 const PUBLIC_BASE_PATH = String(window.SFG_CONFIG?.publicBasePath || '').replace(/\/+$/g, '');
 const DEFAULT_CHAIR_ASSET_URL = `${PUBLIC_BASE_PATH}/assets/models/armchair-01-game.glb`;
@@ -71,9 +78,8 @@ class TableScene3D {
     this.yaw = -0.42;
     this.pitch = DEFAULT_CAMERA_PITCH;
     this.distance = DEFAULT_CAMERA_DISTANCE;
-    this.lookYawOffset = 0;
-    this.lookPitchOffset = 0;
     this.cameraMode = this.tableTheme === 'zha_room' ? 'overview' : 'orbit';
+    this.zhaOrbitEnabled = false;
     this.cameraTransition = null;
     this.cameraDesiredPose = null;
     this.cameraRoomKey = '';
@@ -580,10 +586,10 @@ class TableScene3D {
     this.scene.add(tableGroup);
 
     for (let index = 0; index < ZHA_ROOM_SEATS; index += 1) {
-      const seat = seatPosition(index, ZHA_ROOM_SEATS, 4.05, 0.82);
+      const seat = getZhaRoomChairSeat(index, ZHA_ROOM_SEATS);
       const chairSlot = new THREE.Group();
       chairSlot.name = `Zha_Chair_Slot_${index + 1}`;
-      chairSlot.position.set(seat.x, ZHA_ROOM_FLOOR_Y, seat.z);
+      chairSlot.position.set(seat.x, ZHA_ROOM_CHAIR_Y, seat.z);
       chairSlot.rotation.y = Math.atan2(seat.x, seat.z);
       const fallbackChair = this.createZhaRoomChair(index);
       fallbackChair.name = 'Zha_Chair_Procedural_Fallback';
@@ -866,8 +872,6 @@ class TableScene3D {
         y: event.clientY,
         yaw: this.yaw,
         pitch: this.pitch,
-        lookYaw: this.lookYawOffset,
-        lookPitch: this.lookPitchOffset,
         moved: false,
       };
       this.container.setPointerCapture?.(event.pointerId);
@@ -879,8 +883,16 @@ class TableScene3D {
       const dy = event.clientY - this.drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 7) this.drag.moved = true;
       if (this.tableTheme === 'zha_room') {
-        this.lookYawOffset = clamp(this.drag.lookYaw - dx * 0.0045, -0.95, 0.95);
-        this.lookPitchOffset = clamp(this.drag.lookPitch + dy * 0.0034, -0.34, 0.46);
+        if (!this.zhaOrbitEnabled) {
+          if (!this.drag.moved) return;
+          this.syncZhaOrbitFromCamera();
+          this.setZhaOrbitEnabled(true);
+          this.cameraTransition = null;
+          this.drag.yaw = this.yaw;
+          this.drag.pitch = this.pitch;
+        }
+        this.yaw = this.drag.yaw - dx * 0.008;
+        this.pitch = clamp(this.drag.pitch + dy * 0.006, ZHA_ORBIT_MIN_PITCH, ZHA_ORBIT_MAX_PITCH);
       } else {
         this.yaw = this.drag.yaw - dx * 0.008;
         this.pitch = clamp(this.drag.pitch + dy * 0.006, 0.44, 1.18);
@@ -896,7 +908,19 @@ class TableScene3D {
 
     this.onWheel = (event) => {
       event.preventDefault();
-      if (this.tableTheme === 'zha_room') return;
+      if (this.tableTheme === 'zha_room') {
+        if (!this.zhaOrbitEnabled) {
+          this.syncZhaOrbitFromCamera();
+          this.setZhaOrbitEnabled(true);
+          this.cameraTransition = null;
+        }
+        this.distance = clamp(
+          this.distance + event.deltaY * 0.006,
+          ZHA_ORBIT_MIN_DISTANCE,
+          ZHA_ORBIT_MAX_DISTANCE
+        );
+        return;
+      }
       this.distance = clamp(this.distance + event.deltaY * 0.006, 5.8, 10.4);
     };
 
@@ -905,6 +929,15 @@ class TableScene3D {
     this.container.addEventListener('pointerup', this.onPointerUp);
     this.container.addEventListener('pointercancel', this.onPointerUp);
     this.container.addEventListener('wheel', this.onWheel, { passive: false });
+  }
+
+  setZhaOrbitEnabled(enabled) {
+    this.zhaOrbitEnabled = enabled;
+    if (enabled) {
+      this.zhaRoomChairSlots.forEach((slot) => {
+        slot.visible = true;
+      });
+    }
   }
 
   update(snapshot = {}) {
@@ -1325,8 +1358,10 @@ class TableScene3D {
     const key = `${mode}:${viewerId || 'guest'}:${viewerIndex}:${players.length}`;
     const pose = this.getZhaCameraPose(mode, players, viewerId);
     this.cameraDesiredPose = pose;
+    const cameraStateChanged = key !== this.cameraRoomKey;
+    if (cameraStateChanged) this.zhaOrbitEnabled = false;
     this.updateZhaViewerChairVisibility(mode, players, viewerIndex);
-    if (key === this.cameraRoomKey) return;
+    if (!cameraStateChanged) return;
 
     this.cameraRoomKey = key;
     this.cameraMode = mode;
@@ -1340,19 +1375,15 @@ class TableScene3D {
       toTarget: pose.target.clone(),
       toFov: pose.fov,
     };
-    if (mode !== 'first_person') {
-      this.lookYawOffset = 0;
-      this.lookPitchOffset = 0;
-    }
   }
 
   updateZhaViewerChairVisibility(mode, players, viewerIndex) {
     this.zhaRoomChairSlots.forEach((slot) => {
       slot.visible = true;
     });
-    if (mode !== 'first_person' || viewerIndex < 0 || !this.zhaRoomChairSlots.length) return;
+    if (mode !== 'first_person' || viewerIndex < 0 || this.zhaOrbitEnabled || !this.zhaRoomChairSlots.length) return;
 
-    const viewerSeat = seatPosition(viewerIndex, Math.max(2, players.length || 2), 4.05, 0.82);
+    const viewerSeat = getZhaRoomChairSeat(viewerIndex, Math.max(2, players.length || 2));
     let closestSlot = null;
     let closestDistance = Number.POSITIVE_INFINITY;
     this.zhaRoomChairSlots.forEach((slot) => {
@@ -1369,7 +1400,7 @@ class TableScene3D {
     if (mode === 'first_person') {
       const count = Math.max(2, players.length || 2);
       const viewerIndex = Math.max(0, players.findIndex((player) => player.id === viewerId));
-      const seat = seatPosition(viewerIndex, count, 4.58, 0.82);
+      const seat = seatPosition(viewerIndex, count, 4.58, ZHA_ROOM_CHAIR_Z_SCALE);
       const inward = new THREE.Vector3(-seat.x, 0, -seat.z).normalize();
       const position = new THREE.Vector3(seat.x, 2.05, seat.z).addScaledVector(inward, 0.08);
       const target = new THREE.Vector3(0, 0.85, 0).addScaledVector(inward, 0.05);
@@ -1427,19 +1458,37 @@ class TableScene3D {
       this.rayTarget.lerpVectors(this.cameraTransition.fromTarget, this.cameraTransition.toTarget, eased);
       this.camera.fov = lerp(this.cameraTransition.fromFov, this.cameraTransition.toFov, eased);
       this.camera.updateProjectionMatrix();
-      if (progress >= 1) this.cameraTransition = null;
+      if (progress >= 1) {
+        this.cameraTransition = null;
+        this.syncZhaOrbitFromCamera();
+      }
+    } else if (this.zhaOrbitEnabled) {
+      this.updateZhaOrbitCamera();
     } else {
       this.applyCameraPose(desired);
     }
+  }
 
-    const lookTarget = this.rayTarget.clone();
-    if (this.cameraMode === 'first_person') {
-      const forward = lookTarget.clone().sub(this.camera.position).normalize();
-      const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize();
-      lookTarget.addScaledVector(right, Math.sin(this.lookYawOffset) * 3.2);
-      lookTarget.y += this.lookPitchOffset * 2.8;
-    }
-    this.camera.lookAt(lookTarget);
+  syncZhaOrbitFromCamera() {
+    const offset = this.camera.position.clone().sub(this.rayTarget);
+    const distance = Math.max(0.001, offset.length());
+    this.distance = clamp(distance, ZHA_ORBIT_MIN_DISTANCE, ZHA_ORBIT_MAX_DISTANCE);
+    this.pitch = clamp(
+      Math.asin(clamp(offset.y / distance, -1, 1)),
+      ZHA_ORBIT_MIN_PITCH,
+      ZHA_ORBIT_MAX_PITCH
+    );
+    this.yaw = Math.atan2(offset.x, offset.z);
+  }
+
+  updateZhaOrbitCamera() {
+    const radius = Math.cos(this.pitch) * this.distance;
+    this.camera.position.set(
+      Math.sin(this.yaw) * radius,
+      this.rayTarget.y + Math.sin(this.pitch) * this.distance,
+      Math.cos(this.yaw) * radius
+    );
+    this.camera.lookAt(this.rayTarget);
   }
 
   animateCards(now) {
@@ -2200,6 +2249,10 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.arcTo(x, y + height, x, y, radius);
   ctx.arcTo(x, y, x + width, y, radius);
   ctx.closePath();
+}
+
+function getZhaRoomChairSeat(index, count = ZHA_ROOM_SEATS) {
+  return seatPosition(index, count, ZHA_ROOM_CHAIR_RADIUS, ZHA_ROOM_CHAIR_Z_SCALE);
 }
 
 function seatPosition(index, count, radius, zScale) {

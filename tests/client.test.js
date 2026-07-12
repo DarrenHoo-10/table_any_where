@@ -231,20 +231,52 @@ test('zha room scene uses procedural room props and first person camera transiti
   assert.match(getCameraPoseBlock, /fov: 58/);
   assert.match(getCameraPoseBlock, /new THREE\.Vector3\(seat\.x, 2\.05, seat\.z\)/);
   assert.match(tableScene, /const hideSceneLabel = this\.tableTheme === 'zha_room' && player\.id === viewerId && Boolean\(hand\.id\);/);
-  assert.match(tableScene, /-0\.95, 0\.95/);
-  assert.match(tableScene, /-0\.34, 0\.46/);
-  assert.match(updateCameraBlock, /lookYawOffset/);
+  assert.match(tableScene, /const ZHA_ORBIT_MIN_DISTANCE = 5\.2;/);
+  assert.match(tableScene, /const ZHA_ORBIT_MAX_DISTANCE = 12\.5;/);
+  assert.match(tableScene, /const ZHA_ORBIT_MIN_PITCH = 0\.38;/);
+  assert.match(tableScene, /const ZHA_ORBIT_MAX_PITCH = 1\.2;/);
+  assert.match(tableScene, /zhaOrbitEnabled/);
+  assert.match(tableScene, /syncZhaOrbitFromCamera/);
+  assert.match(tableScene, /updateZhaOrbitCamera/);
+  assert.match(updateCameraBlock, /this\.updateZhaOrbitCamera\(\)/);
+  assert.match(tableScene, /this\.distance = clamp\(\s*this\.distance \+ event\.deltaY \* 0\.006,\s*ZHA_ORBIT_MIN_DISTANCE,\s*ZHA_ORBIT_MAX_DISTANCE\s*\)/);
+  assert.match(tableScene, /this\.pitch = clamp\(this\.drag\.pitch \+ dy \* 0\.006, ZHA_ORBIT_MIN_PITCH, ZHA_ORBIT_MAX_PITCH\)/);
   assert.match(tableScene, /__SFG_TABLE_SCENE_DIAGNOSTICS__/);
 });
 
-test('zha room chairs rest on the room floor instead of floating above it', () => {
+test('zha room chairs keep their seat above the table rail while fallback chairs touch the floor', () => {
   const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
   const zhaSceneBlock = getMethodBlock(tableScene, 'installZhaRoomScene');
 
   assert.match(tableScene, /const ZHA_ROOM_FLOOR_Y = -0\.28;/);
-  assert.match(tableScene, /const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = 0\.18;/);
-  assert.match(zhaSceneBlock, /chairSlot\.position\.set\(seat\.x, ZHA_ROOM_FLOOR_Y, seat\.z\)/);
+  assert.match(tableScene, /const ZHA_ROOM_CHAIR_Y = -0\.02;/);
+  assert.match(tableScene, /const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = -0\.08;/);
+  assert.match(zhaSceneBlock, /chairSlot\.position\.set\(seat\.x, ZHA_ROOM_CHAIR_Y, seat\.z\)/);
   assert.match(zhaSceneBlock, /fallbackChair\.position\.y = ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET;/);
+});
+
+test('zha room chairs keep an equal radial distance from the round table', () => {
+  const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
+  const zhaSceneBlock = getMethodBlock(tableScene, 'installZhaRoomScene');
+  const updateChairVisibilityBlock = getMethodBlock(tableScene, 'updateZhaViewerChairVisibility');
+
+  assert.match(tableScene, /const ZHA_ROOM_CHAIR_RADIUS = 4\.05;/);
+  assert.match(tableScene, /const ZHA_ROOM_CHAIR_Z_SCALE = 1;/);
+  assert.match(tableScene, /function getZhaRoomChairSeat\(index, count = ZHA_ROOM_SEATS\)/);
+  assert.match(tableScene, /return seatPosition\(index, count, ZHA_ROOM_CHAIR_RADIUS, ZHA_ROOM_CHAIR_Z_SCALE\);/);
+  assert.doesNotMatch(tableScene, /ZHA_BACK_CHAIR_OUTWARD_OFFSET/);
+  assert.match(zhaSceneBlock, /const seat = getZhaRoomChairSeat\(index, ZHA_ROOM_SEATS\)/);
+  assert.match(updateChairVisibilityBlock, /const viewerSeat = getZhaRoomChairSeat\(viewerIndex, Math\.max\(2, players\.length \|\| 2\)\)/);
+});
+
+test('zha orbit view restores the viewer chair visibility', () => {
+  const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
+  const updateChairVisibilityBlock = getMethodBlock(tableScene, 'updateZhaViewerChairVisibility');
+
+  assert.match(tableScene, /setZhaOrbitEnabled\(enabled\)/);
+  assert.match(tableScene, /this\.setZhaOrbitEnabled\(true\)/);
+  assert.match(updateChairVisibilityBlock, /this\.zhaOrbitEnabled \|\|/);
+  assert.match(tableScene, /this\.zhaOrbitEnabled = false;\s*this\.updateZhaViewerChairVisibility\(mode, players, viewerIndex\)/);
 });
 
 test('desktop zha room playing state clears side panels and centers action strip', () => {

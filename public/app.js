@@ -7,39 +7,48 @@ const DEFAULT_ROOM_CONFIG = {
   actionTimeoutSeconds: 180,
 };
 
-const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray']);
+const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray', 'zha_room']);
+const ENTRY_PARAMS = new URLSearchParams(window.location.search);
+const ENTRY_AUTO_START = ENTRY_PARAMS.get('autostart') === '1';
+const ENTRY_ROOM_REQUESTED = ENTRY_PARAMS.has('room');
+const ENTRY_ROOM_ID = normalizeEntryRoomId(ENTRY_PARAMS.get('room'));
+const ENTRY_SETUP = ENTRY_PARAMS.get('setup') === '1';
+const AVATAR_IMAGE_BASE = '/player-avatars';
+const CARD_ASSET_BASE = String(
+  window.SFG_CONFIG?.visual?.cardAssetBaseUrl || '/assets/cards/ornate-v1'
+).replace(/\/+$/g, '');
 
 const ZODIAC_AVATARS = [
-  { key: 'rat', label: '鼠', legacy: '🐭' },
-  { key: 'ox', label: '牛', legacy: '🐮' },
-  { key: 'tiger', label: '虎', legacy: '🐯' },
-  { key: 'rabbit', label: '兔', legacy: '🐰' },
-  { key: 'dragon', label: '龙', legacy: '🐲' },
-  { key: 'snake', label: '蛇', legacy: '🐍' },
-  { key: 'horse', label: '马', legacy: '🐴' },
-  { key: 'goat', label: '羊', legacy: '🐐' },
-  { key: 'monkey', label: '猴', legacy: '🐵' },
-  { key: 'rooster', label: '鸡', legacy: '🐔' },
-  { key: 'dog', label: '狗', legacy: '🐶' },
-  { key: 'pig', label: '猪', legacy: '🐷' },
+  { key: 'rat', label: '谋士', legacy: '🐭' },
+  { key: 'ox', label: '冲锋', legacy: '🐮' },
+  { key: 'tiger', label: '女王', legacy: '🐯' },
+  { key: 'rabbit', label: '开心果', legacy: '🐰' },
+  { key: 'dragon', label: '黑帽', legacy: '🐲' },
+  { key: 'snake', label: '红雀', legacy: '🐍' },
+  { key: 'horse', label: '荷官', legacy: '🐴' },
+  { key: 'goat', label: '冷面', legacy: '🐐' },
+  { key: 'monkey', label: '硬汉', legacy: '🐵' },
+  { key: 'rooster', label: '红桃', legacy: '🐔' },
+  { key: 'dog', label: '耳机', legacy: '🐶' },
+  { key: 'pig', label: '闲客', legacy: '🐷' },
 ];
 
 const MODE_LABELS = {
-  zha_jing_hua: 'Flush',
-  tractor: 'Straight',
+  zha_jing_hua: '炸金花',
+  tractor: '顺子玩法',
 };
 
 const MODE_RULES = {
   zha_jing_hua: {
-    title: 'Flush 模式',
+    title: '炸金花模式',
     short: '同花比顺子大，豹子仍是最大牌型。',
-    summary: 'Flush 模式更看重同花牌型：同花高于顺子，适合偏传统炸金花的节奏。',
+    summary: '炸金花模式更看重同花牌型：同花高于顺子，适合偏传统炸金花的节奏。',
     ranking: '牌型从小到大：普通牌、对子、顺子、同花、同花顺、豹子。',
   },
   tractor: {
-    title: 'Straight 模式',
+    title: '顺子模式',
     short: '顺子为核心大牌，顺子高于同花和同花顺。',
-    summary: 'Straight 模式更看重连续牌：顺子压过同花和同花顺，牌局判断会更偏向顺子价值。',
+    summary: '顺子模式更看重连续牌：顺子压过同花和同花顺，牌局判断会更偏向顺子价值。',
     ranking: '牌型从小到大：普通牌、对子、同花、同花顺、顺子、豹子。',
   },
 };
@@ -61,7 +70,7 @@ const state = {
   playerToken: '',
   roomId: '',
   nickname: localStorage.getItem('nickname') || randomNickname(),
-  avatarUrl: normalizeAvatarKey(localStorage.getItem('avatarUrl')),
+  avatarUrl: normalizeAvatarKey(localStorage.getItem('avatarUrl')) || ZODIAC_AVATARS[0].key,
   lastSession: loadJson('lastRoomSession'),
   status: '未连接',
   peekedCards: null,
@@ -70,6 +79,15 @@ const state = {
   peekResultTimer: null,
   leavingRoom: false,
   avatarModalOpen: false,
+  autoStartRequested: ENTRY_AUTO_START,
+  autoStartSent: false,
+  autoSeatAvatar: ENTRY_AUTO_START,
+  autoJoinRequested: ENTRY_ROOM_REQUESTED,
+  autoJoinRoomId: ENTRY_ROOM_ID,
+  autoJoinSent: false,
+  setupRequested: ENTRY_SETUP,
+  awaitingAutoAvatar: false,
+  autoStartHandAfterSeat: false,
   roomPanelCollapsed: false,
   rotateHintDismissed: localStorage.getItem('rotateHintDismissed') === 'true',
   tableScene3d: null,
@@ -83,6 +101,7 @@ const els = {};
 [
   'app',
   'nicknameInput',
+  'preRoomAvatarPicker',
   'avatarPicker',
   'createRoomBtn',
   'joinRoomBtn',
@@ -149,10 +168,17 @@ function init() {
   applyVisualConfig();
   if (els.nicknameInput) els.nicknameInput.value = state.nickname;
   applyDefaultConfig();
+  renderPreRoomAvatarPicker();
   bindEvents();
   connect();
   setInterval(renderTurnClock, 1000);
   render();
+  applyEntryIntent();
+}
+
+function applyEntryIntent() {
+  if (location.hash !== '#join' || !els.roomCodeInput) return;
+  els.roomCodeInput.focus();
 }
 
 function bindEvents() {
@@ -179,13 +205,17 @@ function bindEvents() {
     if (state.room) send('select_avatar', { avatarUrl: button.dataset.avatar });
   });
 
+  els.preRoomAvatarPicker.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-setup-avatar]');
+    if (!button) return;
+    state.avatarUrl = normalizeAvatarKey(button.dataset.setupAvatar) || ZODIAC_AVATARS[0].key;
+    localStorage.setItem('avatarUrl', state.avatarUrl);
+    renderPreRoomAvatarPicker();
+  });
+
   els.createRoomBtn.addEventListener('click', () => {
-    beginNewRoomRequest('正在创建房间...');
-    render();
-    send('create_room', {
-      player: playerPayload(),
-      config: readRoomConfig(),
-    });
+    clearSetupParam();
+    createRoomFromCurrentConfig();
   });
 
   els.joinRoomBtn.addEventListener('click', () => {
@@ -216,6 +246,7 @@ function bindEvents() {
   els.roomPanelToggleBtn.addEventListener('keydown', (event) => {
     event.stopPropagation();
   });
+  document.querySelector('[data-copy-room-trigger]')?.addEventListener('click', copyRoomId);
   els.dismissRotateHintBtn.addEventListener('click', () => {
     state.rotateHintDismissed = true;
     localStorage.setItem('rotateHintDismissed', 'true');
@@ -262,7 +293,23 @@ function connect() {
   state.ws.addEventListener('open', () => {
     state.connected = true;
     state.status = '已连接';
-    if (state.lastSession && state.lastSession.roomId && !state.room) {
+    if (state.autoStartRequested && !state.autoStartSent && !state.room) {
+      state.autoStartSent = true;
+      clearAutoStartParam();
+      createRoomFromCurrentConfig();
+    } else if (state.autoJoinRequested && !state.autoJoinSent && !state.room) {
+      state.autoJoinSent = true;
+      const roomId = state.autoJoinRoomId;
+      clearAutoJoinParam();
+      if (roomId) {
+        joinRoomFromEntry(roomId);
+      } else {
+        beginNewRoomRequest('房间号格式不正确');
+        toast('房间号格式不正确');
+      }
+    } else if (state.setupRequested && !state.room) {
+      state.status = '';
+    } else if (state.lastSession && state.lastSession.roomId && !state.room) {
       send('reconnect', state.lastSession);
     }
     render();
@@ -311,6 +358,8 @@ function handleMessage(message) {
     state.roomId = state.room.id;
     syncSelectedAvatar();
     syncAvatarModalState();
+    autoSelectAvatarIfNeeded();
+    autoStartHandIfReady();
     if (!state.room.hand) {
       state.peekedCards = null;
       state.peekTargetModalOpen = false;
@@ -386,9 +435,57 @@ function send(type, payload = {}) {
   return true;
 }
 
+function createRoomFromCurrentConfig(status = '正在开始游戏...') {
+  beginNewRoomRequest(status);
+  state.autoSeatAvatar = true;
+  state.awaitingAutoAvatar = false;
+  state.autoStartHandAfterSeat = true;
+  render();
+  send('create_room', {
+    player: playerPayload(),
+    config: readRoomConfig(),
+  });
+}
+
+function joinRoomFromEntry(roomId) {
+  beginNewRoomRequest('正在加入房间...');
+  render();
+  send('join_room', { roomId, player: playerPayload() });
+}
+
+function clearAutoStartParam() {
+  if (!state.autoStartRequested) return;
+  state.autoStartRequested = false;
+  state.autoJoinRequested = false;
+  state.autoJoinRoomId = '';
+  const url = new URL(window.location.href);
+  url.searchParams.delete('autostart');
+  url.searchParams.delete('room');
+  url.searchParams.delete('setup');
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+function clearAutoJoinParam() {
+  state.autoJoinRequested = false;
+  state.autoJoinRoomId = '';
+  const url = new URL(window.location.href);
+  url.searchParams.delete('room');
+  url.searchParams.delete('setup');
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+function clearSetupParam() {
+  if (!state.setupRequested) return;
+  state.setupRequested = false;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('setup');
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
 function render() {
   renderStatus();
   renderModeRulePreview();
+  renderPreRoomAvatarPicker();
   renderViews();
   renderRotateHint();
   if (!state.room) {
@@ -420,10 +517,14 @@ function renderViews() {
   els.tableView.hidden = !hasRoom || isFinished;
   els.finalView.hidden = !isFinished;
   document.body.classList.toggle('is-in-room', hasRoom);
+  document.body.dataset.roomStatus = hasRoom ? (state.room.status || 'lobby') : 'home';
 }
 
 function renderRoom() {
   els.roomCodeText.textContent = state.room.id || '-';
+  document.querySelectorAll('[data-room-code-inline]').forEach((node) => {
+    node.textContent = state.room.id || '------';
+  });
   const config = state.room.config || DEFAULT_ROOM_CONFIG;
   const timeoutMinutes = Math.round((config.actionTimeoutSeconds || DEFAULT_ROOM_CONFIG.actionTimeoutSeconds) / 60);
   const summary = `${MODE_LABELS[config.mode] || config.mode} · 初始 ${formatCoins(config.initialCoins || DEFAULT_ROOM_CONFIG.initialCoins)} · 底注 ${config.baseBet} · 喜钱 ${config.bonus} · ${timeoutMinutes}分钟行动`;
@@ -627,7 +728,7 @@ function renderTableScene3d(hand = safeHand()) {
       const avatar = getAvatarInfo(player.avatarUrl);
       return Object.assign({}, player, {
         avatarLabel: avatar ? avatar.label : '待选头像',
-        avatarSrc: avatar ? `/avatars/${avatar.key}.png` : '/avatars/.png',
+        avatarSrc: avatar ? avatarImageUrl(avatar.key) : '/avatars/.png',
       });
     });
 
@@ -686,6 +787,8 @@ function renderCards(container, cards) {
     if (card && RED_SUITS[card.suit]) element.classList.add('is-red');
     element.setAttribute('aria-label', card ? `${card.rank}${SUITS[card.suit] || card.suit}` : '暗牌');
     element.innerHTML = card ? cardFaceMarkup(card) : cardBackMarkup();
+    const assetImage = element.querySelector('[data-card-asset]');
+    assetImage?.addEventListener('error', () => assetImage.remove(), { once: true });
     container.appendChild(element);
   }
 }
@@ -693,7 +796,9 @@ function renderCards(container, cards) {
 function cardFaceMarkup(card) {
   const rank = escapeHtml(card.rank);
   const suit = escapeHtml(SUITS[card.suit] || card.suit);
+  const imageUrl = escapeHtml(`${CARD_ASSET_BASE}/front/${encodeURIComponent(cardAssetId(card))}.webp`);
   return `
+    <img class="card-asset-image" data-card-asset src="${imageUrl}" alt="" aria-hidden="true" decoding="async">
     <span class="card-corner card-corner-top">
       <span class="card-rank">${rank}</span>
       <span class="card-suit">${suit}</span>
@@ -711,11 +816,16 @@ function cardFaceMarkup(card) {
 
 function cardBackMarkup() {
   return `
+    <img class="card-asset-image" data-card-asset src="${CARD_ASSET_BASE}/back.webp" alt="" aria-hidden="true" decoding="async">
     <span class="card-back-emblem" aria-hidden="true">
       <span class="card-back-suit">♠</span>
       <span class="card-back-monogram">SFG</span>
     </span>
   `;
+}
+
+function cardAssetId(card) {
+  return `${String(card?.rank || '')}${String(card?.suit || '')}`;
 }
 
 function renderPeekedCards() {
@@ -1068,6 +1178,7 @@ function clearRoomSession(status, options = {}) {
   state.playerToken = '';
   state.peekedCards = null;
   state.peekTargetModalOpen = false;
+  state.autoStartHandAfterSeat = false;
   closePeekResultModal({ renderAfterClose: false });
   state.lastSession = null;
   if (!options.keepLeaving) state.leavingRoom = false;
@@ -1193,6 +1304,24 @@ function applyDefaultConfig() {
   els.actionTimeoutInput.value = Math.round(DEFAULT_ROOM_CONFIG.actionTimeoutSeconds / 60);
 }
 
+function renderPreRoomAvatarPicker() {
+  if (!els.preRoomAvatarPicker) return;
+  els.preRoomAvatarPicker.innerHTML = '';
+  ZODIAC_AVATARS.forEach((avatar) => {
+    const selected = avatar.key === state.avatarUrl;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'setup-avatar-option';
+    button.dataset.setupAvatar = avatar.key;
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-label', avatar.label);
+    button.setAttribute('aria-checked', selected ? 'true' : 'false');
+    if (selected) button.classList.add('is-selected');
+    button.innerHTML = `${avatarMarkup(avatar.key)}<span>${avatar.label}</span>`;
+    els.preRoomAvatarPicker.appendChild(button);
+  });
+}
+
 function renderAvatarPicker() {
   if (!els.avatarPicker) return;
   const currentPlayer = getCurrentPlayer();
@@ -1226,12 +1355,35 @@ function renderAvatarPicker() {
 function renderAvatarModal() {
   if (!els.avatarModal || !state.room) return;
   const mustChooseAvatar = !currentPlayerHasAvatar();
-  const open = mustChooseAvatar || state.avatarModalOpen;
+  const suppressRequiredAvatar = state.awaitingAutoAvatar && !state.avatarModalOpen;
+  const open = (mustChooseAvatar && !suppressRequiredAvatar) || state.avatarModalOpen;
   els.avatarModal.hidden = !open;
   els.avatarModal.classList.toggle('is-required', mustChooseAvatar);
   els.closeAvatarModalBtn.hidden = mustChooseAvatar;
   els.openAvatarBtn.textContent = currentPlayerHasAvatar() ? '更换头像' : '选择头像';
   els.openAvatarBtn.disabled = state.room.status === 'finished' || (state.room.status !== 'lobby' && currentPlayerHasAvatar());
+}
+
+function autoSelectAvatarIfNeeded() {
+  if (!state.autoSeatAvatar || !state.room || !state.playerId || currentPlayerHasAvatar()) return;
+  if (state.room.status !== 'lobby') return;
+  const preferred = (state.room.avatarOptions || []).find((option) => option.key === state.avatarUrl && !option.disabled);
+  const available = preferred || (state.room.avatarOptions || []).find((option) => !option.disabled);
+  if (!available) return;
+  state.autoSeatAvatar = false;
+  state.avatarModalOpen = false;
+  state.awaitingAutoAvatar = true;
+  send('select_avatar', { avatarUrl: available.key });
+}
+
+function autoStartHandIfReady() {
+  if (!state.autoStartHandAfterSeat || !state.room || !currentPlayerHasAvatar()) return;
+  if (state.room.status !== 'lobby' || !isHost()) {
+    state.autoStartHandAfterSeat = false;
+    return;
+  }
+  state.autoStartHandAfterSeat = false;
+  send('start_hand');
 }
 
 function syncAvatarModalState() {
@@ -1244,8 +1396,13 @@ function syncSelectedAvatar() {
   const player = getCurrentPlayer();
   if (!player) return;
   const assignedAvatar = normalizeAvatarKey(player.avatarUrl);
-  if (assignedAvatar === state.avatarUrl) return;
+  if (!assignedAvatar && (state.autoSeatAvatar || state.awaitingAutoAvatar)) return;
+  if (assignedAvatar === state.avatarUrl) {
+    if (assignedAvatar) state.awaitingAutoAvatar = false;
+    return;
+  }
   state.avatarUrl = assignedAvatar;
+  state.awaitingAutoAvatar = false;
   if (state.avatarUrl) localStorage.setItem('avatarUrl', state.avatarUrl);
 }
 
@@ -1263,7 +1420,11 @@ function avatarMarkup(value) {
   const key = normalizeAvatarKey(value);
   if (!key) return '<span class="avatar-placeholder">待选</span>';
   const avatar = getAvatarInfo(key);
-  return `<img class="avatar-img" src="/avatars/${key}.png" alt="${avatar.label}">`;
+  return `<img class="avatar-img" src="${avatarImageUrl(key)}" alt="${avatar.label}">`;
+}
+
+function avatarImageUrl(key) {
+  return `${AVATAR_IMAGE_BASE}/${key}.png`;
 }
 
 function getAvatarInfo(value) {
@@ -1396,6 +1557,14 @@ function clampNumber(value, min, max, fallback) {
 
 function randomNickname() {
   return `玩家${Math.floor(Math.random() * 9000 + 1000)}`;
+}
+
+function normalizeEntryRoomId(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 8);
 }
 
 function loadJson(key) {

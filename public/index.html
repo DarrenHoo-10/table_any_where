@@ -3,249 +3,208 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#10251f">
-    <title>Straight Flush Web Game</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script src="/config.js"></script>
-    <script type="module" src="/tableScene3d.js"></script>
-    <script defer src="/app.js"></script>
+    <meta name="theme-color" content="#fbfcfa">
+    <meta
+      name="description"
+      content="Table Any Where，让朋友不用下载，发个房间号就能一起打牌。"
+    >
+    <title>Table Any Where · 朋友开局，就差你了</title>
+    <link rel="icon" href="./site-icon-v2.png" type="image/png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+    <link rel="manifest" href="./site.webmanifest">
+    <link
+      rel="preload"
+      href="./design-assets/home-hero-friends-v1.webp"
+      as="image"
+      type="image/webp"
+      fetchpriority="high"
+    >
+    <link rel="stylesheet" href="./lobby.css">
+    <script src="./lobby.js" defer></script>
   </head>
-  <body>
-    <main id="app" class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="/" aria-label="返回首页">
-          <span class="brand-mark">SFG</span>
-          <span>
-            <span class="brand-title">Straight Flush Web Game</span>
-            <span class="brand-subtitle">无数据库在线房间</span>
-          </span>
+  <body data-page="home">
+    <div class="lobby-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="Table Any Where 首页">
+          <img class="brand-mark" src="./site-icon-v2.png" alt="" aria-hidden="true">
+          <span class="brand-name">Table Any Where</span>
         </a>
-        <span id="connectionBadge" class="connection-badge">离线</span>
+
+        <nav id="mainNav" class="main-nav" aria-label="主导航">
+          <a href="/" aria-current="page">首页</a>
+          <a href="#play">一起玩</a>
+          <a href="#rooms">我的房间</a>
+        </nav>
+
+        <div class="header-actions">
+          <a class="resume-link" href="/games/zha-jin-hua.html" data-header-resume hidden>
+            继续上一桌
+          </a>
+          <a class="header-join-link" href="#quickJoin">输入房间号</a>
+          <button
+            class="mobile-menu-button"
+            type="button"
+            aria-label="打开导航"
+            aria-controls="mainNav"
+            aria-expanded="false"
+            data-menu-toggle
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+              <path d="M5 7.5h14M5 12h14M5 16.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <p id="statusText" class="status-text" role="status" aria-live="polite">正在连接服务器...</p>
+      <main class="home-main">
+        <section class="home-hero" aria-labelledby="heroTitle">
+          <div class="hero-copy">
+            <h1 id="heroTitle">朋友开局，<br>就差<em>你</em>了</h1>
+            <p class="hero-description">不用下载，发个房间号就能一起玩。</p>
 
-      <section id="lobbyView" class="view lobby-view" aria-labelledby="lobbyTitle">
-        <div class="intro-panel">
-          <div class="table-chip">纯内存房间 · 结束即清空 · 手机浏览器可玩</div>
-          <h1 id="lobbyTitle">开一桌干净利落的三张牌。</h1>
-          <p>房主配置玩法和底注，朋友输入房间号加入。所有结算只保留在本局房间里。</p>
-          <div id="lobbyRules" class="lobby-rules" aria-label="模式规则说明">
-            <article data-mode-card="zha_jing_hua">
-              <strong>Flush 模式</strong>
-              <span>同花比顺子大。牌型从小到大：普通牌、对子、顺子、同花、同花顺、豹子。</span>
-            </article>
-            <article data-mode-card="tractor">
-              <strong>Straight 模式</strong>
-              <span>顺子为核心大牌，顺子大于同花和同花顺。牌型从小到大：普通牌、对子、同花、同花顺、顺子、豹子。</span>
-            </article>
+            <div class="hero-actions">
+              <a
+                class="primary-action"
+                href="/games/zha-jin-hua.html?setup=1"
+                data-start-game
+              >
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 11.3c-1.1-3.8-2.5-5.4-4.5-5.4A3.2 3.2 0 0 0 4.3 9c0 2.2 1.8 3.4 4.6 2.9-3.3.8-4.6 2.2-4.2 4.2a3.2 3.2 0 0 0 3.7 2.5c2.1-.5 2.9-2.2 3.4-4.9.6 3.5 1.9 4.9 3.9 4.9a3.4 3.4 0 0 0 3.3-3.4c0-2.1-1.7-3.3-4.5-3.2 3.3-.7 4.7-2 4.4-4a3.2 3.2 0 0 0-3.7-2.8c-2 .3-2.9 2-3.2 6.1Z"
+                    fill="currentColor"
+                  />
+                  <path d="M12 12.4c.1 4.1-.7 6.3-2.6 7.4h5.2c-1.9-1.1-2.7-3.3-2.6-7.4Z" fill="currentColor"/>
+                </svg>
+                开始炸金花
+              </a>
+
+              <form id="quickJoin" class="quick-join" data-quick-join novalidate>
+                <div class="quick-join-field">
+                  <label for="roomCode">房间号</label>
+                  <input
+                    id="roomCode"
+                    name="room"
+                    maxlength="8"
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                    inputmode="text"
+                    placeholder="输入房间号"
+                    aria-describedby="joinError"
+                  >
+                </div>
+                <button class="join-button" type="submit" data-join-button>加入</button>
+                <p id="joinError" class="join-error" role="alert" aria-live="polite"></p>
+              </form>
+            </div>
           </div>
-        </div>
 
-        <section class="control-panel" aria-label="创建或加入房间">
-          <div class="field-group">
-            <label for="nicknameInput">昵称</label>
-            <input id="nicknameInput" autocomplete="nickname" maxlength="16" placeholder="输入昵称">
+          <figure class="hero-art">
+            <div class="hero-art-frame" data-hero-frame>
+              <img
+                src="./design-assets/home-hero-friends-v1.webp"
+                width="1600"
+                height="900"
+                alt="四位朋友在明亮客厅里围桌打牌"
+                fetchpriority="high"
+                decoding="async"
+                data-hero-image
+              >
+            </div>
+          </figure>
+        </section>
+
+        <section id="play" class="games-section" aria-labelledby="gamesTitle">
+          <div class="section-heading">
+            <h2 id="gamesTitle">今晚玩什么</h2>
+            <p>炸金花已经可以开桌，更多朋友局正在慢慢加入。</p>
           </div>
 
-          <div class="form-section-title">
-            <strong>创建房间</strong>
-            <span>只有房主需要设置玩法</span>
-          </div>
-
-          <div class="mode-grid">
-            <div class="field-group">
-              <div class="field-label-row">
-                <label for="modeSelect">模式</label>
-                <button id="modeHelpBtn" class="mode-help-btn" type="button" aria-label="查看当前模式规则" aria-controls="modeRulesPreview" aria-expanded="false" title="查看当前模式规则">!</button>
+          <div class="game-rail">
+            <a
+              class="game-card game-card-primary"
+              href="/games/zha-jin-hua.html?setup=1"
+              data-game-id="zha-jin-hua"
+              data-status="available"
+            >
+              <div>
+                <h3>炸金花</h3>
+                <p>经典三张比牌，简单、直接，适合朋友随时开一桌。</p>
+                <span class="card-action" aria-label="开始炸金花">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+                    <path d="M6 12h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
               </div>
-              <select id="modeSelect">
-                <option value="zha_jing_hua">Flush</option>
-                <option value="tractor">Straight</option>
-              </select>
-            </div>
-          </div>
+            </a>
 
-          <div id="modeRulesPreview" class="mode-rules-preview" hidden>
-            <strong data-mode-rule-title>Flush 模式</strong>
-            <p data-mode-rule-copy>同花比顺子大。</p>
-          </div>
-
-          <div class="settings-grid">
-            <div class="field-group">
-              <label for="initialCoinsInput">初始金额</label>
-              <input id="initialCoinsInput" type="number" min="1" step="1">
-            </div>
-            <div class="field-group">
-              <label for="baseBetInput">底注</label>
-              <input id="baseBetInput" type="number" min="1" step="1">
-            </div>
-            <div class="field-group">
-              <label for="bonusInput">喜钱</label>
-              <input id="bonusInput" type="number" min="0" step="1">
-            </div>
-            <div class="field-group">
-              <label for="betOptionsInput">下注档</label>
-              <input id="betOptionsInput" inputmode="numeric" placeholder="5/10/20/50">
-            </div>
-            <div class="field-group">
-              <label for="actionTimeoutInput">行动时间（分钟）</label>
-              <input id="actionTimeoutInput" type="number" min="1" max="60" step="1">
-            </div>
-          </div>
-
-          <button id="createRoomBtn" class="primary-btn wide-btn" type="button">创建房间</button>
-
-          <div class="form-section-title">
-            <strong>加入房间</strong>
-            <span>进入房间后先选择头像</span>
-          </div>
-
-          <div class="join-strip">
-            <div class="field-group compact-field">
-              <label for="roomCodeInput">房间号</label>
-              <input id="roomCodeInput" autocomplete="off" maxlength="8" placeholder="例如 A8K29Q">
-            </div>
-            <button id="joinRoomBtn" class="secondary-btn" type="button">加入</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="tableView" class="view table-view" hidden>
-        <aside class="rotate-phone-hint" aria-label="横屏提示">
-          <div>
-            <strong>横屏体验更好</strong>
-            <span>可以继续竖屏玩，旋转手机会获得完整牌桌视角。</span>
-          </div>
-          <button id="dismissRotateHintBtn" type="button" aria-label="关闭横屏提示">×</button>
-        </aside>
-
-        <section id="roomPanel" class="room-panel" role="button" tabindex="0" aria-label="点击复制房间号">
-          <div>
-            <p class="section-kicker">房间 <span class="room-copy-hint">点击复制</span></p>
-            <h2 id="roomCodeText">------</h2>
-            <p data-room-meta class="room-meta">等待同步房间配置</p>
-          </div>
-          <button id="roomPanelToggleBtn" class="room-panel-toggle" type="button" aria-expanded="true" aria-label="折叠房间信息">-</button>
-        </section>
-        <div class="room-actions">
-          <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
-          <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
-        </div>
-
-        <section id="avatarModal" class="avatar-modal" hidden>
-          <div class="avatar-modal-card" role="dialog" aria-modal="true" aria-labelledby="avatarModalTitle">
-            <div class="panel-title">
-              <h3 id="avatarModalTitle">选择头像</h3>
-              <span data-avatar-help>同一房间头像不能重复</span>
-            </div>
-            <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
-            <button id="closeAvatarModalBtn" class="ghost-btn wide-btn" type="button">稍后再选</button>
-          </div>
-        </section>
-
-        <section id="peekTargetModal" class="avatar-modal" hidden>
-          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekTargetModalTitle">
-            <div class="panel-title">
-              <h3 id="peekTargetModalTitle">选择照牌玩家</h3>
-              <span>对方也需要已看牌</span>
-            </div>
-            <div id="peekTargetOptions" class="peek-target-list"></div>
-            <button id="closePeekTargetModalBtn" class="ghost-btn wide-btn" type="button">取消</button>
-          </div>
-        </section>
-
-        <section id="peekResultModal" class="avatar-modal" hidden>
-          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekResultModalTitle">
-            <div class="panel-title">
-              <h3 id="peekResultModalTitle">照牌结果</h3>
-              <span>5 秒后自动关闭</span>
-            </div>
-            <div id="peekResultBody" class="peek-result-body"></div>
-            <button id="confirmPeekResultBtn" class="primary-btn wide-btn" type="button">确认</button>
-          </div>
-        </section>
-
-        <section class="felt-table">
-          <section id="tableScene3d" class="table-scene-3d" aria-label="3D 发牌桌">
-            <div class="table-scene-status">加载 3D 牌桌...</div>
-          </section>
-
-          <div id="tableTurnTimer" class="table-turn-timer" aria-live="polite" hidden></div>
-
-          <div class="table-metrics">
-            <article>
-              <span>奖池</span>
-              <strong id="potText">0</strong>
+            <article
+              class="game-card game-card-small"
+              data-game-id="party-cards"
+              data-status="coming-soon"
+              aria-disabled="true"
+            >
+              <div class="game-cover game-cover-party" role="img" aria-label="彩色派对牌插画"></div>
+              <div class="game-card-meta">
+                <h3>彩色派对牌</h3>
+                <span class="coming-soon">敬请期待</span>
+              </div>
             </article>
-            <article>
-              <span>当前发言</span>
-              <strong id="currentTurnText">-</strong>
+
+            <article
+              class="game-card game-card-small"
+              data-game-id="undercover"
+              data-status="coming-soon"
+              aria-disabled="true"
+            >
+              <div class="game-cover game-cover-undercover" role="img" aria-label="朋友推理游戏插画"></div>
+              <div class="game-card-meta">
+                <h3>谁是卧底</h3>
+                <span class="coming-soon">敬请期待</span>
+              </div>
+            </article>
+
+            <article
+              class="game-card game-card-small"
+              data-game-id="werewolf"
+              data-status="coming-soon"
+              aria-disabled="true"
+            >
+              <div class="game-cover game-cover-werewolf" role="img" aria-label="月夜朋友聚会插画"></div>
+              <div class="game-card-meta">
+                <h3>狼人杀</h3>
+                <span class="coming-soon">敬请期待</span>
+              </div>
             </article>
           </div>
-
-          <div class="card-zone">
-            <section class="hand-panel">
-              <div class="panel-title">
-                <h3>我的牌</h3>
-                <span>默认暗牌</span>
-              </div>
-              <div id="myCards" class="card-row"></div>
-            </section>
-
-            <section class="hand-panel">
-              <div class="panel-title">
-                <h3>照牌</h3>
-                <span>每手一次</span>
-              </div>
-              <div id="peekedCards" class="peek-zone"></div>
-            </section>
-          </div>
         </section>
 
-        <section class="actions-panel">
-          <div id="actions" class="actions-grid"></div>
-          <section id="settlementPanel" class="settlement-panel" hidden>
-            <h3 data-settlement-title>本手结算</h3>
-            <p data-settlement-detail>等待结算结果</p>
-          </section>
-          <div class="round-actions">
-            <button id="startHandBtn" class="primary-btn" type="button">开始发牌</button>
-            <button id="continueHandBtn" class="secondary-btn" type="button">继续发牌</button>
-            <button id="finishGameBtn" class="ghost-btn" type="button">最终结算</button>
+        <section id="rooms" class="resume-section" aria-labelledby="resumeTitle" data-resume-section>
+          <div class="resume-copy">
+            <h2 id="resumeTitle" data-resume-title>还没有进行中的房间</h2>
+            <p data-resume-copy>先开一桌，之后临时退出也能从这里继续。</p>
+          </div>
+          <div class="resume-actions">
+            <span class="resume-room" data-resume-room hidden></span>
+            <a
+              class="resume-button"
+              href="/games/zha-jin-hua.html?setup=1"
+              data-resume-action
+            >
+              开始一桌
+            </a>
           </div>
         </section>
+      </main>
 
-        <aside class="players-panel">
-          <div class="panel-title">
-            <h3>玩家</h3>
-            <span>实时座位</span>
-          </div>
-          <ul id="playerList" class="player-list"></ul>
-        </aside>
-
-        <section class="room-rules-panel" aria-label="游戏规则简介">
-          <details id="roomRulesBrief">
-            <summary>
-              <span>游戏规则</span>
-              <strong data-room-rule-title>Flush 模式</strong>
-            </summary>
-            <div class="room-rules-content">
-              <p data-room-rule-summary>等待同步房间规则。</p>
-              <ul data-room-rule-points></ul>
-            </div>
-          </details>
-        </section>
-      </section>
-
-      <section id="finalView" class="view final-view" hidden>
-        <div class="final-card">
-          <p class="section-kicker">最终结算</p>
-          <h2>金币榜单</h2>
-          <ol id="rankingList" class="ranking-list"></ol>
-          <button id="backHomeBtn" class="primary-btn wide-btn" type="button">返回首页</button>
-        </div>
-      </section>
-    </main>
+      <footer class="site-footer">
+        <span>Table Any Where · 和朋友轻松开一桌</span>
+        <nav aria-label="页脚导航">
+          <a href="#play">一起玩</a>
+          <a href="/games/zha-jin-hua.html">游戏说明</a>
+        </nav>
+      </footer>
+    </div>
   </body>
 </html>

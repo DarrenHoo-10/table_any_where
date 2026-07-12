@@ -7,7 +7,7 @@
     "start": "node server/index.js",
     "server": "node server/index.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check server/index.js && node --check server/roomManager.js && node --check server/rules.js && node --check public/config.js && node --check public/app.js && node --check public/tableScene3d.js"
+    "check": "node --check server/index.js && node --check server/roomManager.js && node --check server/rules.js && node --check public/config.js && node --check public/lobby.js && node --check public/app.js && node --check public/tableScene3d.js"
   },
   "dependencies": {
     "three": "^0.164.1",

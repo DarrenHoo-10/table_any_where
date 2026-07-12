@@ -4,9 +4,95 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const GAME_HTML = path.join(PUBLIC_DIR, 'games', 'zha-jin-hua.html');
+
+test('home page presents the relaxed friends entry and only advertises available games', () => {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const lobbyJs = fs.readFileSync(path.join(PUBLIC_DIR, 'lobby.js'), 'utf8');
+  const gameHtml = fs.readFileSync(GAME_HTML, 'utf8');
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+
+  assert.match(html, /Table Any Where/);
+  assert.match(html, /朋友开局/);
+  assert.match(html, /class="brand-mark" src="\.\/site-icon-v2\.png"/);
+  assert.match(html, /炸金花/);
+  assert.match(html, /data-quick-join/);
+  assert.match(html, /href="\/games\/zha-jin-hua\.html\?setup=1"/);
+  assert.equal(html.includes('?autostart=1'), false);
+  assert.match(html, /data-status="available"/);
+  assert.match(html, /data-status="coming-soon"/);
+  assert.match(html, /敬请期待/);
+  assert.equal(html.includes('三张牌'), false);
+  assert.equal(html.includes('创建房间'), false);
+  assert.equal(html.includes('在线玩家'), false);
+  assert.equal(html.includes('已上线'), false);
+  assert.equal(html.includes('热门游戏'), false);
+  assert.match(lobbyJs, /id: "zha-jin-hua", status: "available"/);
+  assert.match(lobbyJs, /status: "coming-soon"/);
+  assert.match(lobbyJs, /setup=1/);
+  assert.equal(lobbyJs.includes('autostart=1'), false);
+  assert.match(lobbyJs, /\?room=/);
+  assert.match(lobbyJs, /lastRoomSession/);
+  assert.match(lobbyJs, /window\.location\.assign/);
+  assert.match(gameHtml, /class="game-room-topbar"/);
+  assert.match(gameHtml, /class="room-chat-panel"/);
+  assert.match(appJs, /const AVATAR_IMAGE_BASE = '\/player-avatars';/);
+  assert.match(appJs, /autoSelectAvatarIfNeeded/);
+});
+
+test('zha setup page presents avatar, room parameters, and complete rules before creating', () => {
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
+  const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+
+  assert.match(html, /class="[^"]*setup-header[^"]*"/);
+  assert.match(html, /class="[^"]*setup-hero[^"]*"/);
+  assert.match(html, /<h1 id="lobbyTitle">炸金花<\/h1>/);
+  assert.match(html, /<h2>游戏设置<\/h2>/);
+  assert.doesNotMatch(html, /设置好这一桌，再邀请朋友加入/);
+  assert.doesNotMatch(html, /<h2>游戏设置<\/h2>[\s\S]*都有默认值/);
+  assert.match(html, /class="brand-mark" src="\/site-icon-v2\.png"/);
+  assert.match(html, /id="preRoomAvatarPicker"/);
+  assert.match(html, /id="setupRules"/);
+  assert.match(html, /怎么玩/);
+  assert.match(html, /看牌/);
+  assert.match(html, /跟注/);
+  assert.match(html, /加注/);
+  assert.match(html, /弃牌/);
+  assert.match(html, /比牌/);
+  assert.match(html, /普通牌[\s\S]*对子[\s\S]*顺子[\s\S]*同花[\s\S]*同花顺[\s\S]*豹子/);
+  assert.match(html, /A-2-3 是最小顺子/);
+  assert.match(html, /炸金花玩法[\s\S]*顺子玩法/);
+  assert.match(html, /id="createRoomBtn"[^>]*>[\s\S]*创建房间/);
+  assert.match(css, /body:not\(\.is-in-room\) \.setup-hero/);
+  assert.match(css, /\.setup-avatar-option\.is-selected/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.setup-hero/);
+  assert.match(appJs, /const ENTRY_SETUP = ENTRY_PARAMS\.get\('setup'\) === '1';/);
+  assert.match(appJs, /preRoomAvatarPicker/);
+  assert.match(appJs, /renderPreRoomAvatarPicker/);
+});
+
+test('setup intent waits for explicit create and preferred avatar is seated first', () => {
+  const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  const connectBlock = getFunctionBlock(appJs, 'connect');
+  const createRoomBlock = getEventHandlerBlock(appJs, "els.createRoomBtn.addEventListener('click'");
+  const autoSelectAvatarBlock = getFunctionBlock(appJs, 'autoSelectAvatarIfNeeded');
+  const syncSelectedAvatarBlock = getFunctionBlock(appJs, 'syncSelectedAvatar');
+
+  assert.ok(connectBlock.indexOf('state.autoJoinRequested') < connectBlock.indexOf('state.setupRequested'));
+  assert.ok(connectBlock.indexOf('state.setupRequested') < connectBlock.indexOf('state.lastSession'));
+  assert.match(connectBlock, /state\.setupRequested[\s\S]*state\.status = '';/);
+  assert.equal(connectBlock.match(/createRoomFromCurrentConfig\(\)/g)?.length || 0, 1);
+  assert.match(createRoomBlock, /clearSetupParam\(\);/);
+  assert.match(createRoomBlock, /createRoomFromCurrentConfig\(\);/);
+  assert.match(autoSelectAvatarBlock, /preferred/);
+  assert.match(autoSelectAvatarBlock, /state\.avatarUrl/);
+  assert.match(autoSelectAvatarBlock, /send\('select_avatar', \{ avatarUrl: available\.key \}\);/);
+  assert.match(syncSelectedAvatarBlock, /if \(!assignedAvatar && \(state\.autoSeatAvatar \|\| state\.awaitingAutoAvatar\)\) return;/);
+});
 
 test('create room form no longer exposes custom player count', () => {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
 
   assert.equal(html.includes('maxPlayersInput'), false);
@@ -15,23 +101,34 @@ test('create room form no longer exposes custom player count', () => {
   assert.equal(appJs.includes('maxPlayers:'), false);
 });
 
-test('visual table theme defaults to classic and keeps red wood tray optional', () => {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+test('visual table theme defaults to classic and supports zha room scene', () => {
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
   const configJs = fs.readFileSync(path.join(PUBLIC_DIR, 'config.js'), 'utf8');
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
   const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
   const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
 
   assert.match(html, /<script src="\/config\.js"><\/script>[\s\S]*<script type="module" src="\/tableScene3d\.js"><\/script>/);
+  assert.match(html, /tableTheme = 'zha_room'/);
   assert.match(configJs, /tableTheme: 'classic'/);
   assert.match(configJs, /red_wood_tray/);
-  assert.match(appJs, /const TABLE_THEME_KEYS = new Set\(\['classic', 'red_wood_tray'\]\);/);
+  assert.match(configJs, /zha_room/);
+  assert.match(appJs, /const TABLE_THEME_KEYS = new Set\(\['classic', 'red_wood_tray', 'zha_room'\]\);/);
   assert.match(appJs, /document\.body\.dataset\.tableTheme = getTableTheme\(\);/);
   assert.match(appJs, /tableTheme: getTableTheme\(\)/);
-  assert.match(tableScene, /const TABLE_THEME_KEYS = new Set\(\['classic', 'red_wood_tray'\]\);/);
+  assert.match(tableScene, /const TABLE_THEME_KEYS = new Set\(\['classic', 'red_wood_tray', 'zha_room'\]\);/);
+  assert.match(tableScene, /import \{ GLTFLoader \} from '\.\/vendor\/addons\/loaders\/GLTFLoader\.js';/);
+  assert.match(tableScene, /this\.loadZhaRoomChairAsset\(\);/);
+  assert.match(tableScene, /source\.rotation\.y \+= Math\.PI;/);
+  assert.match(tableScene, /this\.getCardTexture\(card, isBack\)/);
+  assert.match(appJs, /class="card-asset-image"/);
   assert.match(tableScene, /this\.tableTheme = normalizeTableTheme/);
+  assert.match(tableScene, /this\.tableTheme === 'zha_room'/);
+  assert.match(tableScene, /this\.installZhaRoomScene\(\)/);
   assert.match(css, /body\[data-table-theme="red_wood_tray"\] \.table-scene-3d/);
   assert.match(css, /body\.is-in-room\[data-table-theme="red_wood_tray"\] \.table-view/);
+  assert.match(css, /body\.is-in-room\[data-table-theme="zha_room"\] \.zha-room-art/);
+  assert.match(css, /body\.is-in-room\[data-table-theme="zha_room"\] \.table-scene-canvas/);
 });
 
 test('playing cards avoid gold border styling', () => {
@@ -97,6 +194,55 @@ test('3d table keeps classic green table as default and supports red felt wooden
   assert.match(redWoodSceneBlock, /new THREE\.BoxGeometry\(\.\.\.part\.size\)/);
 });
 
+test('zha room scene uses procedural room props and first person camera transition', () => {
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
+  const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
+  const installSceneBlock = getMethodBlock(tableScene, 'installScene');
+  const zhaSceneBlock = getMethodBlock(tableScene, 'installZhaRoomScene');
+  const updateCameraStateBlock = getMethodBlock(tableScene, 'updateZhaCameraState');
+  const updateChairVisibilityBlock = getMethodBlock(tableScene, 'updateZhaViewerChairVisibility');
+  const getCameraPoseBlock = getMethodBlock(tableScene, 'getZhaCameraPose');
+  const updateCameraBlock = getMethodBlock(tableScene, 'updateZhaCamera');
+
+  assert.match(html, /id="startHandBtn"[\s\S]*>开始游戏<\/button>/);
+  assert.match(installSceneBlock, /this\.installZhaRoomScene\(\)/);
+  assert.match(zhaSceneBlock, /ZHA_ROOM_SEATS/);
+  assert.match(zhaSceneBlock, /createZhaTableMedallionTexture\(\)/);
+  assert.match(zhaSceneBlock, /this\.createZhaRoomChair\(index\)/);
+  assert.match(tableScene, /createZhaPlayerFigure\(player, hand, viewerId\)/);
+  assert.match(tableScene, /getAvatarTexture\(player\.avatarSrc\)/);
+  assert.match(updateCameraStateBlock, /roomStatus === 'playing' \? 'first_person' : 'overview'/);
+  assert.match(updateCameraStateBlock, /ZHA_CAMERA_TRANSITION_MS/);
+  assert.match(updateCameraStateBlock, /this\.updateZhaViewerChairVisibility\(mode, players, viewerIndex\)/);
+  assert.match(updateChairVisibilityBlock, /closestSlot\.visible = false/);
+  assert.match(getCameraPoseBlock, /fov: 58/);
+  assert.match(getCameraPoseBlock, /new THREE\.Vector3\(seat\.x, 2\.05, seat\.z\)/);
+  assert.match(tableScene, /const hideSceneLabel = this\.tableTheme === 'zha_room' && player\.id === viewerId && Boolean\(hand\.id\);/);
+  assert.match(tableScene, /-0\.95, 0\.95/);
+  assert.match(tableScene, /-0\.34, 0\.46/);
+  assert.match(updateCameraBlock, /lookYawOffset/);
+  assert.match(tableScene, /__SFG_TABLE_SCENE_DIAGNOSTICS__/);
+});
+
+test('desktop zha room playing state clears side panels and centers action strip', () => {
+  const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
+  const playingFeltBlock = getCssBlock(css, 'body.is-in-room[data-table-theme="zha_room"][data-room-status="playing"] .felt-table');
+  const playingActionsBlock = getCssBlock(css, 'body.is-in-room[data-table-theme="zha_room"][data-room-status="playing"] .actions-panel');
+  const playingGridBlock = getCssBlock(css, 'body.is-in-room[data-table-theme="zha_room"][data-room-status="playing"] .actions-grid');
+  const firstZhaPlayingRule = css.indexOf('body.is-in-room[data-table-theme="zha_room"][data-room-status="playing"] .room-panel');
+
+  assert.match(css, /body\.is-in-room\[data-table-theme="zha_room"\]\[data-room-status="playing"\] \.room-panel,[\s\S]*?\.players-panel,[\s\S]*?\.table-seat-label \{[\s\S]*?display: none;/);
+  assert.match(css, /@media \(min-width: 761px\) \{[\s\S]*data-room-status="playing"/);
+  assert.notEqual(firstZhaPlayingRule, -1);
+  assert.ok(css.lastIndexOf('@media (min-width: 761px)', firstZhaPlayingRule) > css.lastIndexOf('@media (max-width: 760px)', firstZhaPlayingRule));
+  assert.match(playingFeltBlock, /inset: 66px 16px 112px 16px;/);
+  assert.match(playingActionsBlock, /left: 50%;/);
+  assert.match(playingActionsBlock, /right: auto;/);
+  assert.match(playingActionsBlock, /transform: translateX\(-50%\);/);
+  assert.match(playingActionsBlock, /width: min\(980px, calc\(100vw - 48px\)\);/);
+  assert.match(playingGridBlock, /repeat\(8, minmax\(72px, 1fr\)\)/);
+});
+
 test('3d playing cards do not cast or receive shadows', () => {
   const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
   const renderCardsBlock = getMethodBlock(tableScene, 'renderCards');
@@ -155,7 +301,7 @@ test('3d card faces keep side corners hidden for overlapped hands', () => {
 
 test('turn clock updates timer text without rebuilding the 3d scene', () => {
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
   const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
   const renderHandBlock = getFunctionBlock(appJs, 'renderHand');
   const renderTurnClockBlock = getFunctionBlock(appJs, 'renderTurnClock');
@@ -238,9 +384,29 @@ test('new room requests clear stale saved sessions and ignore stale room states'
   const roomStateBlock = getMessageBranchBlock(appJs, "message.type === 'room_state'");
   const leaveRoomBlock = getFunctionBlock(appJs, 'leaveRoom');
   const beginNewRoomRequestBlock = getFunctionBlock(appJs, 'beginNewRoomRequest');
+  const createRoomFromCurrentConfigBlock = getFunctionBlock(appJs, 'createRoomFromCurrentConfig');
+  const joinRoomFromEntryBlock = getFunctionBlock(appJs, 'joinRoomFromEntry');
+  const connectBlock = getFunctionBlock(appJs, 'connect');
+  const autoStartHandIfReadyBlock = getFunctionBlock(appJs, 'autoStartHandIfReady');
   const leftRoomBlock = getMessageBranchBlock(appJs, "message.type === 'left_room'");
 
-  assert.match(createRoomBlock, /beginNewRoomRequest\('正在创建房间\.\.\.'\);/);
+  assert.match(createRoomBlock, /createRoomFromCurrentConfig\(\);/);
+  assert.match(createRoomFromCurrentConfigBlock, /beginNewRoomRequest\(status\);/);
+  assert.match(createRoomFromCurrentConfigBlock, /state\.autoSeatAvatar = true;/);
+  assert.match(createRoomFromCurrentConfigBlock, /state\.awaitingAutoAvatar = false;/);
+  assert.match(createRoomFromCurrentConfigBlock, /state\.autoStartHandAfterSeat = true;/);
+  assert.match(createRoomFromCurrentConfigBlock, /send\('create_room'/);
+  assert.match(appJs, /const ENTRY_ROOM_REQUESTED = ENTRY_PARAMS\.has\('room'\);/);
+  assert.match(appJs, /const ENTRY_ROOM_ID = normalizeEntryRoomId\(ENTRY_PARAMS\.get\('room'\)\);/);
+  assert.ok(connectBlock.indexOf('state.autoStartRequested') < connectBlock.indexOf('state.autoJoinRequested'));
+  assert.ok(connectBlock.indexOf('state.autoJoinRequested') < connectBlock.indexOf('state.lastSession'));
+  assert.match(joinRoomFromEntryBlock, /beginNewRoomRequest\('正在加入房间\.\.\.'\);/);
+  assert.match(joinRoomFromEntryBlock, /send\('join_room', \{ roomId, player: playerPayload\(\) \}\);/);
+  assert.match(appJs, /function clearAutoJoinParam\(\)/);
+  assert.match(appJs, /url\.searchParams\.delete\('room'\);/);
+  assert.match(roomStateBlock, /autoStartHandIfReady\(\);/);
+  assert.match(autoStartHandIfReadyBlock, /state\.room\.status !== 'lobby' \|\| !isHost\(\)/);
+  assert.match(autoStartHandIfReadyBlock, /send\('start_hand'\);/);
   assert.match(joinRoomBlock, /beginNewRoomRequest\('正在加入房间\.\.\.'\);/);
   assert.match(backHomeBlock, /clearRoomSession\('已返回首页'\);/);
   assert.match(leaveRoomBlock, /clearRoomSession\('已离开房间', \{ keepLeaving: true \}\);/);
@@ -294,7 +460,7 @@ test('action and settlement messages apply coin snapshots before room refresh', 
 });
 
 test('room info can collapse and portrait rotate hint can be dismissed', () => {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
   const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
 
@@ -337,7 +503,7 @@ test('mid-hand joiners are shown as waiting instead of folded', () => {
 });
 
 test('peek action uses target and result modals with auto-close notification', () => {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const html = fs.readFileSync(GAME_HTML, 'utf8');
   const appJs = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
   const renderActionsBlock = getFunctionBlock(appJs, 'renderActions');
   const handleMessageBlock = getFunctionBlock(appJs, 'handleMessage');

@@ -1,0 +1,380 @@
+{
+  "schema": "straight-flush-card-assets/v1",
+  "version": "ornate-v1",
+  "format": "webp",
+  "textureSize": [
+    512,
+    717
+  ],
+  "defaultBack": "back.webp",
+  "cards": [
+    {
+      "id": "AS",
+      "rank": "A",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/AS.webp"
+    },
+    {
+      "id": "2S",
+      "rank": "2",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/2S.webp"
+    },
+    {
+      "id": "3S",
+      "rank": "3",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/3S.webp"
+    },
+    {
+      "id": "4S",
+      "rank": "4",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/4S.webp"
+    },
+    {
+      "id": "5S",
+      "rank": "5",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/5S.webp"
+    },
+    {
+      "id": "6S",
+      "rank": "6",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/6S.webp"
+    },
+    {
+      "id": "7S",
+      "rank": "7",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/7S.webp"
+    },
+    {
+      "id": "8S",
+      "rank": "8",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/8S.webp"
+    },
+    {
+      "id": "9S",
+      "rank": "9",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/9S.webp"
+    },
+    {
+      "id": "10S",
+      "rank": "10",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/10S.webp"
+    },
+    {
+      "id": "JS",
+      "rank": "J",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/JS.webp"
+    },
+    {
+      "id": "QS",
+      "rank": "Q",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/QS.webp"
+    },
+    {
+      "id": "KS",
+      "rank": "K",
+      "suit": "S",
+      "sourceSuit": "spades",
+      "front": "front/KS.webp"
+    },
+    {
+      "id": "AH",
+      "rank": "A",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/AH.webp"
+    },
+    {
+      "id": "2H",
+      "rank": "2",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/2H.webp"
+    },
+    {
+      "id": "3H",
+      "rank": "3",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/3H.webp"
+    },
+    {
+      "id": "4H",
+      "rank": "4",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/4H.webp"
+    },
+    {
+      "id": "5H",
+      "rank": "5",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/5H.webp"
+    },
+    {
+      "id": "6H",
+      "rank": "6",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/6H.webp"
+    },
+    {
+      "id": "7H",
+      "rank": "7",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/7H.webp"
+    },
+    {
+      "id": "8H",
+      "rank": "8",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/8H.webp"
+    },
+    {
+      "id": "9H",
+      "rank": "9",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/9H.webp"
+    },
+    {
+      "id": "10H",
+      "rank": "10",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/10H.webp"
+    },
+    {
+      "id": "JH",
+      "rank": "J",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/JH.webp"
+    },
+    {
+      "id": "QH",
+      "rank": "Q",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/QH.webp"
+    },
+    {
+      "id": "KH",
+      "rank": "K",
+      "suit": "H",
+      "sourceSuit": "hearts",
+      "front": "front/KH.webp"
+    },
+    {
+      "id": "AD",
+      "rank": "A",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/AD.webp"
+    },
+    {
+      "id": "2D",
+      "rank": "2",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/2D.webp"
+    },
+    {
+      "id": "3D",
+      "rank": "3",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/3D.webp"
+    },
+    {
+      "id": "4D",
+      "rank": "4",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/4D.webp"
+    },
+    {
+      "id": "5D",
+      "rank": "5",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/5D.webp"
+    },
+    {
+      "id": "6D",
+      "rank": "6",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/6D.webp"
+    },
+    {
+      "id": "7D",
+      "rank": "7",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/7D.webp"
+    },
+    {
+      "id": "8D",
+      "rank": "8",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/8D.webp"
+    },
+    {
+      "id": "9D",
+      "rank": "9",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/9D.webp"
+    },
+    {
+      "id": "10D",
+      "rank": "10",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/10D.webp"
+    },
+    {
+      "id": "JD",
+      "rank": "J",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/JD.webp"
+    },
+    {
+      "id": "QD",
+      "rank": "Q",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/QD.webp"
+    },
+    {
+      "id": "KD",
+      "rank": "K",
+      "suit": "D",
+      "sourceSuit": "diamonds",
+      "front": "front/KD.webp"
+    },
+    {
+      "id": "AC",
+      "rank": "A",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/AC.webp"
+    },
+    {
+      "id": "2C",
+      "rank": "2",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/2C.webp"
+    },
+    {
+      "id": "3C",
+      "rank": "3",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/3C.webp"
+    },
+    {
+      "id": "4C",
+      "rank": "4",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/4C.webp"
+    },
+    {
+      "id": "5C",
+      "rank": "5",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/5C.webp"
+    },
+    {
+      "id": "6C",
+      "rank": "6",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/6C.webp"
+    },
+    {
+      "id": "7C",
+      "rank": "7",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/7C.webp"
+    },
+    {
+      "id": "8C",
+      "rank": "8",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/8C.webp"
+    },
+    {
+      "id": "9C",
+      "rank": "9",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/9C.webp"
+    },
+    {
+      "id": "10C",
+      "rank": "10",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/10C.webp"
+    },
+    {
+      "id": "JC",
+      "rank": "J",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/JC.webp"
+    },
+    {
+      "id": "QC",
+      "rank": "Q",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/QC.webp"
+    },
+    {
+      "id": "KC",
+      "rank": "K",
+      "suit": "C",
+      "sourceSuit": "clubs",
+      "front": "front/KC.webp"
+    }
+  ],
+  "source": {
+    "schema": "playing-card-deck/v1",
+    "manifest": "game_assets/playing_card/cards.json"
+  }
+}

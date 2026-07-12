@@ -1,4 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
+import { GLTFLoader } from './vendor/addons/loaders/GLTFLoader.js';
 
 const SUITS = {
   S: '♠',
@@ -21,6 +22,11 @@ const TABLE_TIMER_POSITION = new THREE.Vector3(-0.58, TABLETOP_PROP_Y, -0.22);
 const DEFAULT_CAMERA_PITCH = 0.62;
 const DEFAULT_CAMERA_DISTANCE = 8.9;
 const DEFAULT_CAMERA_TARGET_Y = 0.04;
+const ZHA_CAMERA_TRANSITION_MS = 1250;
+const ZHA_ROOM_SEATS = 8;
+const ZHA_CHAIR_TARGET_HEIGHT = 1.72;
+const DEFAULT_CHAIR_ASSET_URL = '/assets/models/armchair-01-game.glb';
+const DEFAULT_CARD_ASSET_BASE_URL = '/assets/cards/ornate-v1';
 const PLAYER_CHIP_LIMIT = 50;
 const POT_CHIP_LIMIT = 50;
 const CHIP_HEIGHT = 0.026;
@@ -34,7 +40,8 @@ const CHIP_PALETTES = [
   { face: 0xf3f0e6, edge: 0x8a8272, ink: '#24221d' },
   { face: 0x242832, edge: 0x0e1118, ink: '#f7e7b0' },
 ];
-const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray']);
+const TABLE_THEME_KEYS = new Set(['classic', 'red_wood_tray', 'zha_room']);
+const TABLE_ASSET_KEYS = new Set(['procedural_zha_round', 'clean_board_game_store_table']);
 
 function createTableScene3D(container, options = {}) {
   return new TableScene3D(container, options);
@@ -54,12 +61,19 @@ class TableScene3D {
     this.labelLayer.className = 'table-scene-label-layer';
     this.labelsById = new Map();
     this.cardMeshes = [];
+    this.sceneMaterials = new Set();
     this.materialsByDenomination = new Map();
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.yaw = -0.42;
     this.pitch = DEFAULT_CAMERA_PITCH;
     this.distance = DEFAULT_CAMERA_DISTANCE;
+    this.lookYawOffset = 0;
+    this.lookPitchOffset = 0;
+    this.cameraMode = this.tableTheme === 'zha_room' ? 'overview' : 'orbit';
+    this.cameraTransition = null;
+    this.cameraDesiredPose = null;
+    this.cameraRoomKey = '';
     this.cameraSeatKey = '';
     this.lastHandId = '';
     this.lastSettlementAt = 0;
@@ -70,9 +84,27 @@ class TableScene3D {
     this.lastSnapshot = null;
     this.disposed = false;
     this.drag = null;
+    this.textureLoader = new THREE.TextureLoader();
+    this.gltfLoader = new GLTFLoader();
+    this.avatarTextures = new Map();
+    this.cardTextureCache = new Map();
+    this.zhaRoomChairSlots = [];
+    this.chairAssetRoot = null;
+    this.chairAssetStatus = 'idle';
+    this.chairAssetMetrics = null;
+    this.chairAssetUrl = String(
+      options.chairAssetUrl || window.SFG_CONFIG?.visual?.chairAssetUrl || DEFAULT_CHAIR_ASSET_URL
+    );
+    this.cardAssetBaseUrl = normalizeAssetBaseUrl(
+      options.cardAssetBaseUrl || window.SFG_CONFIG?.visual?.cardAssetBaseUrl || DEFAULT_CARD_ASSET_BASE_URL
+    );
+    this.tableAsset = normalizeTableAsset(options.tableAsset || window.SFG_CONFIG?.visual?.tableAsset);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = this.tableTheme === 'zha_room' ? 1.24 : 1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.domElement.className = 'table-scene-canvas';
@@ -86,6 +118,36 @@ class TableScene3D {
     container.appendChild(this.labelLayer);
 
     this.installScene();
+    if (this.tableTheme === 'zha_room') {
+      const pose = this.getZhaCameraPose('overview', [], '');
+      this.cameraDesiredPose = pose;
+      this.applyCameraPose(pose);
+    }
+    const thisScene = this;
+    window.__SFG_TABLE_SCENE_DIAGNOSTICS__ = {
+      renderer: this.renderer.info,
+      get theme() {
+        return thisScene.tableTheme;
+      },
+      get cameraMode() {
+        return thisScene.cameraMode;
+      },
+      get tableAsset() {
+        return thisScene.tableAsset;
+      },
+      get chairAssetStatus() {
+        return thisScene.chairAssetStatus;
+      },
+      get chairAssetMetrics() {
+        return thisScene.chairAssetMetrics;
+      },
+      get cardTextureCount() {
+        return thisScene.cardTextureCache.size;
+      },
+      get roomStatus() {
+        return thisScene.lastSnapshot?.room?.status || 'none';
+      },
+    };
     this.bindEvents();
     this.resize();
     this.renderFrame = this.renderFrame.bind(this);
@@ -94,8 +156,18 @@ class TableScene3D {
     requestAnimationFrame(this.renderFrame);
   }
 
+  trackSceneMaterial(material) {
+    if (Array.isArray(material)) {
+      material.forEach((item) => this.trackSceneMaterial(item));
+      return material;
+    }
+    if (material) this.sceneMaterials.add(material);
+    return material;
+  }
+
   installScene() {
-    if (this.tableTheme === 'red_wood_tray') this.installRedWoodTrayScene();
+    if (this.tableTheme === 'zha_room') this.installZhaRoomScene();
+    else if (this.tableTheme === 'red_wood_tray') this.installRedWoodTrayScene();
     else this.installClassicScene();
 
     this.deck = this.createCardMesh(null, true);
@@ -340,6 +412,449 @@ class TableScene3D {
     this.scene.add(tableGroup);
   }
 
+  installZhaRoomScene() {
+    this.scene.background = new THREE.Color(0x120907);
+    this.scene.fog = new THREE.Fog(0x120907, 10, 24);
+
+    const ambient = new THREE.HemisphereLight(0xffe7bd, 0x160907, 1.78);
+    this.scene.add(ambient);
+
+    const keyLight = new THREE.SpotLight(0xffd7a0, 5.55, 18, Math.PI / 4.8, 0.44, 1.1);
+    keyLight.position.set(-2.2, 6.6, 2.4);
+    keyLight.target.position.set(0, 0.15, 0);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    this.scene.add(keyLight);
+    this.scene.add(keyLight.target);
+
+    const fillLight = new THREE.DirectionalLight(0xffdfb4, 1.35);
+    fillLight.position.set(3.6, 3.8, 4.4);
+    this.scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xffbf83, 0.72);
+    rimLight.position.set(-4.8, 2.8, -3.8);
+    this.scene.add(rimLight);
+
+    [
+      { position: [-5.6, 2.25, -4.6], color: 0xf0a24d, intensity: 2.05 },
+      { position: [5.4, 2.0, -4.8], color: 0xffcc88, intensity: 1.82 },
+      { position: [4.8, 1.5, 3.7], color: 0xff8755, intensity: 1.22 },
+      { position: [0, 2.1, 4.8], color: 0xffd2a0, intensity: 1.18 },
+    ].forEach((light) => {
+      const lamp = new THREE.PointLight(light.color, light.intensity, 7.6, 1.65);
+      lamp.position.set(...light.position);
+      this.scene.add(lamp);
+      const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.08, 18, 12),
+        new THREE.MeshBasicMaterial({ color: light.color, transparent: true, opacity: 0.62 })
+      );
+      glow.position.copy(lamp.position);
+      this.scene.add(glow);
+    });
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(18, 14),
+      new THREE.MeshStandardMaterial({
+        map: createDarkWoodFloorTexture(),
+        roughness: 0.7,
+        metalness: 0.08,
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.28;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    const wallMaterial = this.trackSceneMaterial(new THREE.MeshStandardMaterial({
+      map: createLibraryWallTexture(),
+      roughness: 0.88,
+      metalness: 0.04,
+    }));
+
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(18, 6.4), wallMaterial);
+    backWall.position.set(0, 2.72, -6.7);
+    backWall.receiveShadow = true;
+    this.scene.add(backWall);
+
+    const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(14, 6.4), wallMaterial);
+    leftWall.position.set(-8.6, 2.72, 0);
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.receiveShadow = true;
+    this.scene.add(leftWall);
+
+    const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(14, 6.4), wallMaterial);
+    rightWall.position.set(8.6, 2.72, 0);
+    rightWall.rotation.y = -Math.PI / 2;
+    rightWall.receiveShadow = true;
+    this.scene.add(rightWall);
+
+    this.addLibraryShelves();
+
+    const rug = new THREE.Mesh(
+      new THREE.CircleGeometry(5.85, 128),
+      this.trackSceneMaterial(new THREE.MeshStandardMaterial({
+        color: 0x25130f,
+        roughness: 0.96,
+        metalness: 0.02,
+      }))
+    );
+    rug.rotation.x = -Math.PI / 2;
+    rug.scale.set(1.08, 0.82, 1);
+    rug.position.y = -0.255;
+    rug.receiveShadow = true;
+    this.scene.add(rug);
+
+    const woodMaterial = this.trackSceneMaterial(createWarmOakMaterial({
+      repeat: [2.45, 0.82],
+      bumpScale: 0.018,
+    }));
+    const darkWoodMaterial = this.trackSceneMaterial(createDarkWoodMaterial({
+      repeat: [1.4, 0.72],
+      bumpScale: 0.01,
+    }));
+    const feltMaterial = this.trackSceneMaterial(new THREE.MeshStandardMaterial({
+      map: createRedFeltTexture(),
+      roughness: 0.96,
+      metalness: 0.02,
+    }));
+
+    const tableGroup = new THREE.Group();
+    tableGroup.name = 'Zha_Table_Group';
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(3.18, 3.32, 0.34, 160), darkWoodMaterial);
+    base.name = 'Zha_Table_Base';
+    base.position.y = 0.02;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    tableGroup.add(base);
+
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(3.08, 3.12, 0.12, 160), woodMaterial);
+    top.name = 'Zha_Table_Top';
+    top.position.y = 0.22;
+    top.castShadow = true;
+    top.receiveShadow = true;
+    tableGroup.add(top);
+
+    const felt = new THREE.Mesh(new THREE.CylinderGeometry(2.72, 2.72, 0.035, 160), feltMaterial);
+    felt.name = 'Zha_Table_Felt';
+    felt.position.y = 0.305;
+    felt.receiveShadow = true;
+    tableGroup.add(felt);
+
+    const rail = new THREE.Mesh(
+      new THREE.TorusGeometry(2.98, 0.15, 22, 160),
+      woodMaterial
+    );
+    rail.name = 'Zha_Table_Rail';
+    rail.rotation.x = Math.PI / 2;
+    rail.position.y = 0.34;
+    rail.castShadow = true;
+    rail.receiveShadow = true;
+    tableGroup.add(rail);
+
+    [1.18, 2.18].forEach((radius) => {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(radius, 0.012, 8, 128),
+        new THREE.MeshStandardMaterial({ color: 0xb57a3a, roughness: 0.48, metalness: 0.36 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.335;
+      tableGroup.add(ring);
+    });
+
+    const medallion = new THREE.Mesh(
+      new THREE.CircleGeometry(0.78, 96),
+      new THREE.MeshBasicMaterial({
+        map: createZhaTableMedallionTexture(),
+        transparent: true,
+        toneMapped: false,
+      })
+    );
+    medallion.rotation.x = -Math.PI / 2;
+    medallion.position.y = 0.338;
+    medallion.renderOrder = 4;
+    tableGroup.add(medallion);
+
+    this.scene.add(tableGroup);
+
+    for (let index = 0; index < ZHA_ROOM_SEATS; index += 1) {
+      const seat = seatPosition(index, ZHA_ROOM_SEATS, 4.05, 0.82);
+      const chairSlot = new THREE.Group();
+      chairSlot.name = `Zha_Chair_Slot_${index + 1}`;
+      chairSlot.position.set(seat.x, -0.02, seat.z);
+      chairSlot.rotation.y = Math.atan2(seat.x, seat.z);
+      const fallbackChair = this.createZhaRoomChair(index);
+      fallbackChair.name = 'Zha_Chair_Procedural_Fallback';
+      chairSlot.add(fallbackChair);
+      this.zhaRoomChairSlots.push(chairSlot);
+      this.scene.add(chairSlot);
+    }
+
+    this.loadZhaRoomChairAsset();
+  }
+
+  addLibraryShelves() {
+    const shelfWood = new THREE.MeshStandardMaterial({ color: 0x2a140c, roughness: 0.68, metalness: 0.1 });
+    const bookMaterials = [0x4a1f1f, 0x60472b, 0x253448, 0x1f3d2f, 0x6b4a1e].map((color) => (
+      new THREE.MeshStandardMaterial({ color, roughness: 0.74, metalness: 0.04 })
+    ));
+
+    const addShelfUnit = (x, z, rotationY = 0) => {
+      const group = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.52, 2.8, 0.22), shelfWood);
+      frame.position.y = 1.08;
+      frame.castShadow = true;
+      frame.receiveShadow = true;
+      group.add(frame);
+
+      for (let row = 0; row < 4; row += 1) {
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.045, 0.32), shelfWood);
+        shelf.position.set(0, 0.18 + row * 0.55, -0.18);
+        shelf.castShadow = true;
+        group.add(shelf);
+
+        for (let book = 0; book < 6; book += 1) {
+          const width = 0.12 + ((book + row) % 3) * 0.025;
+          const height = 0.3 + ((book * 2 + row) % 4) * 0.035;
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(width, height, 0.08),
+            bookMaterials[(book + row) % bookMaterials.length]
+          );
+          mesh.position.set(-0.58 + book * 0.2, 0.36 + row * 0.55 + height * 0.5, -0.36);
+          mesh.rotation.z = ((book % 2) - 0.5) * 0.04;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          group.add(mesh);
+        }
+      }
+
+      group.position.set(x, 0, z);
+      group.rotation.y = rotationY;
+      this.scene.add(group);
+    };
+
+    [-5.7, -3.8, -1.9, 1.9, 3.8, 5.7].forEach((x) => addShelfUnit(x, -6.45, 0));
+    [-4.8, -2.9, 2.9, 4.8].forEach((z) => {
+      addShelfUnit(-8.38, z, Math.PI / 2);
+      addShelfUnit(8.38, z, -Math.PI / 2);
+    });
+  }
+
+  async loadZhaRoomChairAsset() {
+    if (this.chairAssetStatus === 'loading' || this.chairAssetStatus === 'ready') return;
+    this.chairAssetStatus = 'loading';
+    try {
+      const gltf = await this.gltfLoader.loadAsync(this.chairAssetUrl);
+      const source = gltf.scene;
+      if (this.disposed) {
+        disposeObjectResources(source);
+        return;
+      }
+
+      source.name = 'Armchair_01_Runtime';
+      // The source model's local forward axis points away from the seat opening.
+      // Rotate the runtime derivative so every chair faces the table center.
+      source.rotation.y += Math.PI;
+      source.updateMatrixWorld(true);
+      const initialBounds = new THREE.Box3().setFromObject(source);
+      const initialSize = initialBounds.getSize(new THREE.Vector3());
+      if (!Number.isFinite(initialSize.y) || initialSize.y <= 0) {
+        throw new Error('Chair model has invalid bounds');
+      }
+
+      source.scale.multiplyScalar(ZHA_CHAIR_TARGET_HEIGHT / initialSize.y);
+      source.updateMatrixWorld(true);
+      const normalizedBounds = new THREE.Box3().setFromObject(source);
+      const normalizedCenter = normalizedBounds.getCenter(new THREE.Vector3());
+      source.position.x -= normalizedCenter.x;
+      source.position.y -= normalizedBounds.min.y;
+      source.position.z -= normalizedCenter.z;
+      source.updateMatrixWorld(true);
+
+      source.traverse((object) => {
+        if (!object.isMesh) return;
+        object.castShadow = false;
+        object.receiveShadow = true;
+      });
+
+      this.chairAssetRoot = source;
+      this.chairAssetMetrics = collectModelMetrics(source);
+      this.zhaRoomChairSlots.forEach((slot) => {
+        slot.clear();
+        slot.add(source.clone(true));
+      });
+      this.chairAssetStatus = 'ready';
+    } catch (error) {
+      this.chairAssetStatus = 'fallback';
+      console.warn('Unable to load optimized chair asset; keeping procedural chairs.', error);
+    }
+  }
+
+  createZhaRoomChair(index) {
+    const group = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: 0x7d411e, roughness: 0.43, metalness: 0.22 });
+    const darkWood = new THREE.MeshStandardMaterial({ color: 0x30150b, roughness: 0.6, metalness: 0.12 });
+    const leather = new THREE.MeshStandardMaterial({ color: index % 2 ? 0x491c18 : 0x381719, roughness: 0.52, metalness: 0.08 });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xd19442, roughness: 0.36, metalness: 0.46 });
+
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.18, 0.78), leather);
+    seat.position.y = 0.34;
+    seat.castShadow = true;
+    seat.receiveShadow = true;
+    group.add(seat);
+
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.96, 1.28, 0.18), leather);
+    back.position.set(0, 0.98, 0.42);
+    back.castShadow = true;
+    back.receiveShadow = true;
+    group.add(back);
+
+    const crest = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.035, 8, 48), brass);
+    crest.position.set(0, 1.62, 0.31);
+    crest.rotation.x = Math.PI / 2;
+    group.add(crest);
+
+    const plus = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.46, 0.025),
+      new THREE.MeshStandardMaterial({
+        color: 0xffc06f,
+        emissive: 0x6d3200,
+        roughness: 0.32,
+        metalness: 0.25,
+      })
+    );
+    plus.position.set(0, 1.28, 0.3);
+    group.add(plus);
+    const plusCross = plus.clone();
+    plusCross.rotation.z = Math.PI / 2;
+    group.add(plusCross);
+
+    [-0.5, 0.5].forEach((x) => {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.82), wood);
+      arm.position.set(x, 0.58, -0.02);
+      arm.castShadow = true;
+      group.add(arm);
+
+      const frontLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.52, 12), darkWood);
+      frontLeg.position.set(x, 0.08, -0.28);
+      frontLeg.castShadow = true;
+      group.add(frontLeg);
+
+      const backLeg = frontLeg.clone();
+      backLeg.position.z = 0.34;
+      group.add(backLeg);
+    });
+
+    return group;
+  }
+
+  createZhaPlayerFigure(player, hand, viewerId) {
+    const isMe = player.id === viewerId;
+    const isTurn = player.id === hand.currentTurnPlayerId;
+    const folded = (hand.foldedPlayerIds || []).includes(player.id);
+    const jacketColor = isMe ? 0x275948 : isTurn ? 0x8a4d1f : 0x252a32;
+    const group = new THREE.Group();
+
+    const torso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.36, 0.54, 28),
+      new THREE.MeshStandardMaterial({
+        color: jacketColor,
+        roughness: 0.62,
+        metalness: 0.08,
+        emissive: isTurn ? 0x2d1600 : 0x000000,
+      })
+    );
+    torso.position.set(0, 0.62, 0.03);
+    torso.scale.x = 1.15;
+    torso.castShadow = true;
+    torso.receiveShadow = true;
+    group.add(torso);
+
+    const collar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.22, 0.018, 8, 32),
+      new THREE.MeshStandardMaterial({ color: 0xd8c6a6, roughness: 0.5, metalness: 0.08 })
+    );
+    collar.position.set(0, 0.91, -0.02);
+    collar.rotation.x = Math.PI / 2;
+    group.add(collar);
+
+    const portraitTexture = this.getAvatarTexture(player.avatarSrc);
+    const portraitFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(0.56, 0.56, 0.035),
+      new THREE.MeshStandardMaterial({
+        color: isMe ? 0x87ffe1 : isTurn ? 0xffcb68 : 0x9b6a35,
+        roughness: 0.34,
+        metalness: 0.42,
+        emissive: isTurn ? 0x3a2100 : 0x000000,
+      })
+    );
+    portraitFrame.position.set(0, 1.04, -0.2);
+    portraitFrame.rotation.y = Math.PI;
+    group.add(portraitFrame);
+
+    const portrait = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.48, 0.48),
+      new THREE.MeshBasicMaterial({
+        map: portraitTexture,
+        transparent: true,
+        toneMapped: false,
+      })
+    );
+    portrait.position.set(0, 1.04, -0.222);
+    portrait.rotation.y = Math.PI;
+    portrait.renderOrder = 12;
+    group.add(portrait);
+
+    [-0.36, 0.36].forEach((x) => {
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.055, 0.07, 0.5, 16),
+        new THREE.MeshStandardMaterial({ color: jacketColor, roughness: 0.66, metalness: 0.06 })
+      );
+      arm.position.set(x, 0.68, -0.18);
+      arm.rotation.z = x > 0 ? -0.74 : 0.74;
+      arm.rotation.x = 0.38;
+      arm.castShadow = true;
+      group.add(arm);
+    });
+
+    for (let cardIndex = 0; cardIndex < 3; cardIndex += 1) {
+      const card = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.2, 0.008),
+        new THREE.MeshStandardMaterial({
+          color: folded ? 0x5b5145 : 0xead8b6,
+          roughness: 0.48,
+          metalness: 0.02,
+        })
+      );
+      card.position.set((cardIndex - 1) * 0.07, 0.82 + cardIndex * 0.01, -0.38);
+      card.rotation.set(0.36, (cardIndex - 1) * 0.16, (cardIndex - 1) * 0.12);
+      group.add(card);
+    }
+
+    if (isTurn) {
+      const turnRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.46, 0.018, 8, 64),
+        new THREE.MeshBasicMaterial({ color: 0xffcf70, transparent: true, opacity: 0.78, toneMapped: false })
+      );
+      turnRing.position.set(0, 1.38, -0.08);
+      turnRing.rotation.x = Math.PI / 2;
+      group.add(turnRing);
+    }
+
+    return group;
+  }
+
+  getAvatarTexture(src) {
+    if (!src) return createFallbackAvatarTexture();
+    if (this.avatarTextures.has(src)) return this.avatarTextures.get(src);
+    const texture = this.textureLoader.load(src, (loaded) => {
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      loaded.needsUpdate = true;
+    });
+    texture.colorSpace = THREE.SRGBColorSpace;
+    this.avatarTextures.set(src, texture);
+    return texture;
+  }
+
   bindEvents() {
     this.onPointerDown = (event) => {
       this.drag = {
@@ -347,6 +862,8 @@ class TableScene3D {
         y: event.clientY,
         yaw: this.yaw,
         pitch: this.pitch,
+        lookYaw: this.lookYawOffset,
+        lookPitch: this.lookPitchOffset,
         moved: false,
       };
       this.container.setPointerCapture?.(event.pointerId);
@@ -357,8 +874,13 @@ class TableScene3D {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 7) this.drag.moved = true;
-      this.yaw = this.drag.yaw - dx * 0.008;
-      this.pitch = clamp(this.drag.pitch + dy * 0.006, 0.44, 1.18);
+      if (this.tableTheme === 'zha_room') {
+        this.lookYawOffset = clamp(this.drag.lookYaw - dx * 0.0045, -0.95, 0.95);
+        this.lookPitchOffset = clamp(this.drag.lookPitch + dy * 0.0034, -0.34, 0.46);
+      } else {
+        this.yaw = this.drag.yaw - dx * 0.008;
+        this.pitch = clamp(this.drag.pitch + dy * 0.006, 0.44, 1.18);
+      }
     };
 
     this.onPointerUp = (event) => {
@@ -370,6 +892,7 @@ class TableScene3D {
 
     this.onWheel = (event) => {
       event.preventDefault();
+      if (this.tableTheme === 'zha_room') return;
       this.distance = clamp(this.distance + event.deltaY * 0.006, 5.8, 10.4);
     };
 
@@ -398,7 +921,11 @@ class TableScene3D {
 
     const players = Array.isArray(snapshot.players) ? snapshot.players : [];
     const config = snapshot.room.config || {};
-    this.alignCameraToViewerSeat(players, snapshot.viewerId);
+    if (this.tableTheme === 'zha_room') {
+      this.updateZhaCameraState(snapshot.room.status || 'lobby', players, snapshot.viewerId);
+    } else {
+      this.alignCameraToViewerSeat(players, snapshot.viewerId);
+    }
     const settlement = snapshot.room.lastSettlement || null;
     if (settlement && settlement.settledAt && settlement.settledAt !== this.lastSettlementAt) {
       this.lastSettlementAt = settlement.settledAt;
@@ -430,18 +957,28 @@ class TableScene3D {
       const tableSeat = seatPosition(index, players.length, 2.64, 0.76);
       const chipDirection = new THREE.Vector3(tableSeat.x, 0, tableSeat.z).normalize();
       const chipTangent = new THREE.Vector3(-chipDirection.z, 0, chipDirection.x);
-      const marker = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.16, 0.08, 28),
-        new THREE.MeshStandardMaterial({
-          color: player.id === hand.currentTurnPlayerId ? 0xf5d77d : player.id === viewerId ? 0x80ddc9 : 0xd9c89c,
-          emissive: player.id === hand.currentTurnPlayerId ? 0x5a4200 : 0x000000,
-          roughness: 0.44,
-          metalness: 0.2,
-        })
-      );
-      marker.position.set(seat.x, 0.43, seat.z);
-      marker.castShadow = true;
-      this.playersGroup.add(marker);
+      if (this.tableTheme === 'zha_room') {
+        const isViewerInActiveHand = player.id === viewerId && Boolean(hand.id);
+        if (!isViewerInActiveHand) {
+          const figure = this.createZhaPlayerFigure(player, hand, viewerId);
+          figure.position.set(seat.x, 0.02, seat.z);
+          figure.rotation.y = Math.atan2(seat.x, seat.z);
+          this.playersGroup.add(figure);
+        }
+      } else {
+        const marker = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.12, 0.16, 0.08, 28),
+          new THREE.MeshStandardMaterial({
+            color: player.id === hand.currentTurnPlayerId ? 0xf5d77d : player.id === viewerId ? 0x80ddc9 : 0xd9c89c,
+            emissive: player.id === hand.currentTurnPlayerId ? 0x5a4200 : 0x000000,
+            roughness: 0.44,
+            metalness: 0.2,
+          })
+        );
+        marker.position.set(seat.x, 0.43, seat.z);
+        marker.castShadow = true;
+        this.playersGroup.add(marker);
+      }
 
       const chips = this.createChipStack(player.coins, config, PLAYER_CHIP_LIMIT, 7);
       chips.position
@@ -452,6 +989,9 @@ class TableScene3D {
       this.playersGroup.add(chips);
 
       const label = this.getLabel(player.id);
+      const hideSceneLabel = this.tableTheme === 'zha_room' && player.id === viewerId && Boolean(hand.id);
+      label.hidden = hideSceneLabel;
+      if (hideSceneLabel) return;
       label.className = 'table-seat-label';
       label.classList.toggle('is-me', player.id === viewerId);
       label.classList.toggle('is-turn', player.id === hand.currentTurnPlayerId);
@@ -577,8 +1117,8 @@ class TableScene3D {
   }
 
   createCardMesh(card, isBack) {
-    const frontTexture = createCardTexture(card, isBack);
-    const backTexture = createCardTexture(null, true);
+    const frontTexture = this.getCardTexture(card, isBack);
+    const backTexture = this.getCardTexture(null, true);
     const edgeMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
@@ -603,6 +1143,36 @@ class TableScene3D {
       new THREE.BoxGeometry(CARD_SIZE.width, CARD_SIZE.height, CARD_THICKNESS),
       [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial]
     );
+  }
+
+  getCardTexture(card, isBack) {
+    const key = isBack ? 'back' : cardAssetId(card);
+    if (this.cardTextureCache.has(key)) return this.cardTextureCache.get(key);
+
+    const assetUrl = isBack
+      ? `${this.cardAssetBaseUrl}/back.webp`
+      : `${this.cardAssetBaseUrl}/front/${encodeURIComponent(key)}.webp`;
+    const texture = this.textureLoader.load(
+      assetUrl,
+      () => {
+        texture.userData.assetStatus = 'ready';
+      },
+      undefined,
+      () => {
+        const fallback = createCardTexture(card, isBack);
+        texture.image = fallback.image;
+        texture.needsUpdate = true;
+        texture.userData.assetStatus = 'fallback';
+        texture.userData.assetFallback = true;
+        fallback.dispose();
+      }
+    );
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    texture.userData.assetUrl = assetUrl;
+    texture.userData.assetStatus = 'loading';
+    this.cardTextureCache.set(key, texture);
+    return texture;
   }
 
   installTurnTimerDevice() {
@@ -730,7 +1300,7 @@ class TableScene3D {
   clearCards() {
     this.cardMeshes.forEach((mesh) => {
       mesh.geometry.dispose();
-      disposeMaterial(mesh.material);
+      disposeMaterial(mesh.material, { disposeTextures: false });
     });
     this.cardMeshes = [];
     while (this.cardsGroup.children.length) this.cardsGroup.remove(this.cardsGroup.children[0]);
@@ -745,9 +1315,83 @@ class TableScene3D {
     this.renderer.setSize(width, height, false);
   }
 
+  updateZhaCameraState(roomStatus, players, viewerId) {
+    const mode = roomStatus === 'playing' ? 'first_person' : 'overview';
+    const viewerIndex = players.findIndex((player) => player.id === viewerId);
+    const key = `${mode}:${viewerId || 'guest'}:${viewerIndex}:${players.length}`;
+    const pose = this.getZhaCameraPose(mode, players, viewerId);
+    this.cameraDesiredPose = pose;
+    this.updateZhaViewerChairVisibility(mode, players, viewerIndex);
+    if (key === this.cameraRoomKey) return;
+
+    this.cameraRoomKey = key;
+    this.cameraMode = mode;
+    this.cameraTransition = {
+      startedAt: performance.now(),
+      duration: ZHA_CAMERA_TRANSITION_MS,
+      fromPosition: this.camera.position.clone(),
+      fromTarget: this.rayTarget.clone(),
+      fromFov: this.camera.fov,
+      toPosition: pose.position.clone(),
+      toTarget: pose.target.clone(),
+      toFov: pose.fov,
+    };
+    if (mode !== 'first_person') {
+      this.lookYawOffset = 0;
+      this.lookPitchOffset = 0;
+    }
+  }
+
+  updateZhaViewerChairVisibility(mode, players, viewerIndex) {
+    this.zhaRoomChairSlots.forEach((slot) => {
+      slot.visible = true;
+    });
+    if (mode !== 'first_person' || viewerIndex < 0 || !this.zhaRoomChairSlots.length) return;
+
+    const viewerSeat = seatPosition(viewerIndex, Math.max(2, players.length || 2), 4.05, 0.82);
+    let closestSlot = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    this.zhaRoomChairSlots.forEach((slot) => {
+      const distance = Math.hypot(slot.position.x - viewerSeat.x, slot.position.z - viewerSeat.z);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestSlot = slot;
+      }
+    });
+    if (closestSlot) closestSlot.visible = false;
+  }
+
+  getZhaCameraPose(mode, players, viewerId) {
+    if (mode === 'first_person') {
+      const count = Math.max(2, players.length || 2);
+      const viewerIndex = Math.max(0, players.findIndex((player) => player.id === viewerId));
+      const seat = seatPosition(viewerIndex, count, 4.58, 0.82);
+      const inward = new THREE.Vector3(-seat.x, 0, -seat.z).normalize();
+      const position = new THREE.Vector3(seat.x, 2.05, seat.z).addScaledVector(inward, 0.08);
+      const target = new THREE.Vector3(0, 0.85, 0).addScaledVector(inward, 0.05);
+      return { position, target, fov: 58 };
+    }
+
+    return {
+      position: new THREE.Vector3(0.35, 6.25, 5.85),
+      target: new THREE.Vector3(0, 0.26, 0),
+      fov: 38,
+    };
+  }
+
+  applyCameraPose(pose) {
+    this.camera.position.copy(pose.position);
+    this.rayTarget.copy(pose.target);
+    if (this.camera.fov !== pose.fov) {
+      this.camera.fov = pose.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.camera.lookAt(this.rayTarget);
+  }
+
   renderFrame(now) {
     if (this.disposed) return;
-    this.updateCamera();
+    this.updateCamera(now);
     this.animateCards(now);
     this.animatePotCollect(now);
     this.positionLabels();
@@ -755,7 +1399,12 @@ class TableScene3D {
     requestAnimationFrame(this.renderFrame);
   }
 
-  updateCamera() {
+  updateCamera(now = performance.now()) {
+    if (this.tableTheme === 'zha_room') {
+      this.updateZhaCamera(now);
+      return;
+    }
+
     const radius = Math.cos(this.pitch) * this.distance;
     this.camera.position.set(
       Math.sin(this.yaw) * radius,
@@ -763,6 +1412,30 @@ class TableScene3D {
       Math.cos(this.yaw) * radius
     );
     this.camera.lookAt(this.rayTarget);
+  }
+
+  updateZhaCamera(now) {
+    const desired = this.cameraDesiredPose || this.getZhaCameraPose('overview', [], '');
+    if (this.cameraTransition) {
+      const progress = clamp((now - this.cameraTransition.startedAt) / this.cameraTransition.duration, 0, 1);
+      const eased = easeInOutCubic(progress);
+      this.camera.position.lerpVectors(this.cameraTransition.fromPosition, this.cameraTransition.toPosition, eased);
+      this.rayTarget.lerpVectors(this.cameraTransition.fromTarget, this.cameraTransition.toTarget, eased);
+      this.camera.fov = lerp(this.cameraTransition.fromFov, this.cameraTransition.toFov, eased);
+      this.camera.updateProjectionMatrix();
+      if (progress >= 1) this.cameraTransition = null;
+    } else {
+      this.applyCameraPose(desired);
+    }
+
+    const lookTarget = this.rayTarget.clone();
+    if (this.cameraMode === 'first_person') {
+      const forward = lookTarget.clone().sub(this.camera.position).normalize();
+      const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize();
+      lookTarget.addScaledVector(right, Math.sin(this.lookYawOffset) * 3.2);
+      lookTarget.y += this.lookPitchOffset * 2.8;
+    }
+    this.camera.lookAt(lookTarget);
   }
 
   animateCards(now) {
@@ -909,8 +1582,18 @@ class TableScene3D {
     this.container.removeEventListener('pointercancel', this.onPointerUp);
     this.container.removeEventListener('wheel', this.onWheel);
     this.clearCards();
+    if (this.deck) {
+      this.deck.geometry.dispose();
+      disposeMaterial(this.deck.material, { disposeTextures: false });
+    }
+    this.cardTextureCache.forEach((texture) => texture.dispose());
+    this.cardTextureCache.clear();
+    disposeObjectResources(this.chairAssetRoot);
+    this.chairAssetRoot = null;
     this.turnTimerTexture?.dispose();
     this.turnTimerMaterial?.dispose();
+    this.sceneMaterials.forEach((material) => disposeMaterial(material));
+    this.sceneMaterials.clear();
     this.materialsByDenomination.forEach((materials) => {
       materials.face.map?.dispose();
       materials.face.dispose();
@@ -970,7 +1653,173 @@ function createCardTexture(card, isBack) {
   drawCard(ctx, canvas.width, canvas.height, card, isBack);
   const texture = new THREE.CanvasTexture(canvas);
   texture.anisotropy = 4;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+function cardAssetId(card) {
+  return `${String(card?.rank || '')}${String(card?.suit || '')}`;
+}
+
+function createWarmOakMaterial(options = {}) {
+  const repeat = options.repeat || [2.8, 1];
+  return new THREE.MeshPhysicalMaterial({
+    color: options.color || 0xb9793d,
+    map: createOakColorTexture({ repeat, dark: false }),
+    roughness: options.roughness ?? 0.62,
+    roughnessMap: createOakRoughnessTexture({ repeat, dark: false }),
+    metalness: 0,
+    bumpMap: createOakBumpTexture({ repeat, dark: false }),
+    bumpScale: options.bumpScale ?? 0.016,
+    clearcoat: options.clearcoat ?? 0.1,
+    clearcoatRoughness: options.clearcoatRoughness ?? 0.78,
+    envMapIntensity: options.envMapIntensity ?? 0.46,
+  });
+}
+
+function createDarkWoodMaterial(options = {}) {
+  const repeat = options.repeat || [1.6, 0.8];
+  return new THREE.MeshPhysicalMaterial({
+    color: options.color || 0x3b1e10,
+    map: createOakColorTexture({ repeat, dark: true }),
+    roughness: options.roughness ?? 0.66,
+    roughnessMap: createOakRoughnessTexture({ repeat, dark: true }),
+    metalness: 0,
+    bumpMap: createOakBumpTexture({ repeat, dark: true }),
+    bumpScale: options.bumpScale ?? 0.01,
+    clearcoat: options.clearcoat ?? 0.08,
+    clearcoatRoughness: options.clearcoatRoughness ?? 0.82,
+    envMapIntensity: options.envMapIntensity ?? 0.38,
+  });
+}
+
+function createOakColorTexture({ repeat = [1, 1], dark = false } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const palette = dark
+    ? ['#2a150b', '#3a1e0f', '#4a2915', '#261209']
+    : ['#8e5428', '#ad6d35', '#c28749', '#78401f'];
+  const base = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  base.addColorStop(0, palette[0]);
+  base.addColorStop(0.34, palette[1]);
+  base.addColorStop(0.68, palette[2]);
+  base.addColorStop(1, palette[3]);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 12; i += 1) {
+    const y = 22 + i * 19 + Math.sin(i * 1.7) * 7;
+    const alpha = dark ? 0.12 : 0.105;
+    ctx.strokeStyle = `rgba(${dark ? '124, 74, 39' : '114, 61, 27'}, ${alpha})`;
+    ctx.lineWidth = i % 4 === 0 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(-30, y);
+    ctx.bezierCurveTo(260, y - 10 + Math.sin(i) * 13, 560, y + 13, canvas.width + 30, y + Math.cos(i) * 7);
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    const x = 70 + i * 118;
+    const y = 52 + ((i * 37) % 142);
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, 70);
+    glow.addColorStop(0, dark ? 'rgba(255, 177, 94, 0.07)' : 'rgba(255, 236, 184, 0.16)');
+    glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 76, y - 76, 152, 152);
+  }
+
+  return createPreparedCanvasTexture(canvas, { repeat, colorSpace: THREE.SRGBColorSpace, anisotropy: 8 });
+}
+
+function createOakRoughnessTexture({ repeat = [1, 1], dark = false } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = dark ? '#9b9b9b' : '#969696';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let i = 0; i < 10; i += 1) {
+    const y = 8 + i * 12;
+    ctx.strokeStyle = i % 3 === 0 ? 'rgba(196, 196, 196, 0.22)' : 'rgba(104, 104, 104, 0.13)';
+    ctx.lineWidth = i % 3 === 0 ? 5 : 2;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.bezierCurveTo(160, y + Math.sin(i * 2.1) * 8, 350, y - 6, canvas.width, y + Math.cos(i) * 5);
+    ctx.stroke();
+  }
+
+  return createPreparedCanvasTexture(canvas, { repeat, anisotropy: 6 });
+}
+
+function createOakBumpTexture({ repeat = [1, 1], dark = false } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.lineCap = 'round';
+
+  for (let i = 0; i < 14; i += 1) {
+    const y = 7 + i * 9 + Math.sin(i) * 3;
+    ctx.strokeStyle = i % 4 === 0
+      ? (dark ? 'rgba(106, 106, 106, 0.24)' : 'rgba(112, 112, 112, 0.20)')
+      : (dark ? 'rgba(150, 150, 150, 0.16)' : 'rgba(156, 156, 156, 0.14)');
+    ctx.lineWidth = i % 4 === 0 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(-20, y);
+    ctx.bezierCurveTo(140, y - 4, 320, y + Math.sin(i * 1.3) * 7, canvas.width + 20, y + 2);
+    ctx.stroke();
+  }
+
+  return createPreparedCanvasTexture(canvas, { repeat, anisotropy: 6 });
+}
+
+function createPreparedCanvasTexture(canvas, { repeat = [1, 1], colorSpace, anisotropy = 4 } = {}) {
+  const texture = new THREE.CanvasTexture(canvas);
+  if (colorSpace) texture.colorSpace = colorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat[0], repeat[1]);
+  texture.anisotropy = anisotropy;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function applyBoardGameWoodTableMaterials(root) {
+  if (!root || typeof root.traverse !== 'function') return { root, materials: [] };
+
+  const tableTopMaterial = createWarmOakMaterial({ repeat: [3.2, 1.1], bumpScale: 0.012 });
+  const supportMaterial = createDarkWoodMaterial({ repeat: [1.35, 0.8], bumpScale: 0.008 });
+  const assignedMaterials = new Set();
+  const disposedOriginals = new Set();
+
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    const name = object.name || '';
+    let replacement = null;
+    if (name === 'Tabletop_Solid' || name.includes('Tabletop')) replacement = tableTopMaterial;
+    else if (name.startsWith('Table_Leg') || name.startsWith('Table_Apron')) replacement = supportMaterial;
+    if (!replacement) return;
+
+    const previousMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    previousMaterials.forEach((material) => {
+      if (material && !disposedOriginals.has(material)) {
+        disposeMaterial(material);
+        disposedOriginals.add(material);
+      }
+    });
+    object.material = replacement;
+    object.castShadow = true;
+    object.receiveShadow = true;
+    assignedMaterials.add(replacement);
+  });
+
+  return { root, materials: Array.from(assignedMaterials) };
 }
 
 function createWoodTexture() {
@@ -1069,8 +1918,218 @@ function createForestBackdropTexture() {
   return texture;
 }
 
+let fallbackAvatarTexture = null;
+
+function createFallbackAvatarTexture() {
+  if (fallbackAvatarTexture) return fallbackAvatarTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(128, 92, 16, 128, 128, 132);
+  gradient.addColorStop(0, '#ffe3aa');
+  gradient.addColorStop(0.45, '#a65d2a');
+  gradient.addColorStop(1, '#20100a');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = '#0d0907';
+  ctx.beginPath();
+  ctx.arc(128, 104, 44, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#2d1710';
+  roundRect(ctx, 70, 146, 116, 76, 26);
+  ctx.fill();
+  ctx.fillStyle = '#ffe6b0';
+  ctx.font = '900 42px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText('TAW', 128, 198);
+  fallbackAvatarTexture = new THREE.CanvasTexture(canvas);
+  fallbackAvatarTexture.colorSpace = THREE.SRGBColorSpace;
+  return fallbackAvatarTexture;
+}
+
+function createDarkWoodFloorTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a0f0a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < canvas.height; y += 46) {
+    const plankGradient = ctx.createLinearGradient(0, y, canvas.width, y + 42);
+    plankGradient.addColorStop(0, y % 92 === 0 ? '#2d180d' : '#21120a');
+    plankGradient.addColorStop(0.5, '#3c2111');
+    plankGradient.addColorStop(1, '#160b07');
+    ctx.fillStyle = plankGradient;
+    ctx.fillRect(0, y, canvas.width, 42);
+    ctx.strokeStyle = 'rgba(8, 4, 2, 0.78)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, y + 42);
+    ctx.lineTo(canvas.width, y + 42);
+    ctx.stroke();
+
+    for (let x = 0; x < canvas.width; x += 64) {
+      ctx.strokeStyle = 'rgba(255, 205, 122, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 8 + Math.sin(x + y) * 4);
+      ctx.lineTo(x + 54, y + 16 + Math.cos(x * 0.2) * 5);
+      ctx.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 2.2);
+  return texture;
+}
+
+function createLibraryWallTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const background = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  background.addColorStop(0, '#2a150d');
+  background.addColorStop(0.6, '#120907');
+  background.addColorStop(1, '#080403');
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let shelf = 0; shelf < 5; shelf += 1) {
+    const y = 54 + shelf * 84;
+    ctx.fillStyle = '#3c1e0e';
+    ctx.fillRect(0, y + 58, canvas.width, 10);
+    for (let book = 0; book < 42; book += 1) {
+      const x = book * 13 + ((shelf + book) % 4);
+      const height = 26 + ((book * 7 + shelf) % 24);
+      const colors = ['#5b2422', '#6b4a22', '#243d46', '#244531', '#77603a'];
+      ctx.fillStyle = colors[(book + shelf) % colors.length];
+      ctx.fillRect(x, y + 58 - height, 8 + (book % 3), height);
+      ctx.fillStyle = 'rgba(255, 221, 150, 0.12)';
+      ctx.fillRect(x + 2, y + 61 - height, 1, Math.max(8, height - 8));
+    }
+  }
+
+  ctx.fillStyle = 'rgba(255, 178, 86, 0.1)';
+  for (let i = 0; i < 20; i += 1) {
+    ctx.beginPath();
+    ctx.arc(24 + i * 25, 28 + (i % 4) * 9, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1.5, 1);
+  return texture;
+}
+
+function createZhaTableMedallionTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = ctx.createRadialGradient(256, 220, 40, 256, 256, 230);
+  gradient.addColorStop(0, 'rgba(255, 204, 113, 0.92)');
+  gradient.addColorStop(0.45, 'rgba(151, 82, 31, 0.78)');
+  gradient.addColorStop(1, 'rgba(43, 20, 10, 0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(256, 256, 238, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255, 221, 151, 0.78)';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(256, 256, 174, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(42, 16, 8, 0.72)';
+  for (let spoke = 0; spoke < 12; spoke += 1) {
+    const angle = (spoke / 12) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(256 + Math.cos(angle) * 92, 256 + Math.sin(angle) * 92);
+    ctx.lineTo(256 + Math.cos(angle) * 168, 256 + Math.sin(angle) * 168);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#2a1208';
+  ctx.font = '900 88px Georgia';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ZHA', 256, 248);
+  ctx.font = '800 34px Georgia';
+  ctx.fillStyle = 'rgba(255, 235, 180, 0.82)';
+  ctx.fillText('TABLE ANY WHERE', 256, 326);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function normalizeTableTheme(theme) {
   return TABLE_THEME_KEYS.has(theme) ? theme : 'classic';
+}
+
+function normalizeTableAsset(asset) {
+  return TABLE_ASSET_KEYS.has(asset) ? asset : 'procedural_zha_round';
+}
+
+function normalizeAssetBaseUrl(url) {
+  return String(url || '').replace(/\/+$/g, '') || DEFAULT_CARD_ASSET_BASE_URL;
+}
+
+function collectModelMetrics(root) {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+  let triangles = 0;
+  root.traverse((object) => {
+    if (!object.isMesh || !object.geometry || geometries.has(object.geometry)) return;
+    geometries.add(object.geometry);
+    const indexCount = object.geometry.index?.count;
+    const vertexCount = object.geometry.attributes?.position?.count || 0;
+    triangles += Math.floor((indexCount || vertexCount) / 3);
+    const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    meshMaterials.forEach((material) => {
+      if (!material) return;
+      materials.add(material);
+      ['map', 'normalMap', 'roughnessMap', 'metalnessMap'].forEach((key) => {
+        if (material[key]) textures.add(material[key]);
+      });
+    });
+  });
+  return {
+    triangles,
+    geometries: geometries.size,
+    materials: materials.size,
+    textures: textures.size,
+  };
+}
+
+function disposeObjectResources(root) {
+  if (!root) return;
+  const geometries = new Set();
+  const materials = new Set();
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    if (object.geometry) geometries.add(object.geometry);
+    const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    meshMaterials.forEach((material) => {
+      if (material) materials.add(material);
+    });
+  });
+  geometries.forEach((geometry) => geometry.dispose());
+  disposeMaterial([...materials]);
 }
 
 function formatSceneTurnTimer(deadlineAt) {
@@ -1086,12 +2145,44 @@ function getSceneTurnRemainingSeconds(deadlineAt) {
   return Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000));
 }
 
-function disposeMaterial(material) {
+function disposeMaterial(material, options = {}) {
   const materials = Array.isArray(material) ? material : [material];
   const disposed = new Set();
+  const disposedTextures = new Set();
+  const shouldDisposeTextures = options.disposeTextures !== false;
+  const textureKeys = [
+    'map',
+    'alphaMap',
+    'aoMap',
+    'bumpMap',
+    'clearcoatMap',
+    'clearcoatNormalMap',
+    'clearcoatRoughnessMap',
+    'displacementMap',
+    'emissiveMap',
+    'envMap',
+    'lightMap',
+    'metalnessMap',
+    'normalMap',
+    'roughnessMap',
+    'sheenColorMap',
+    'sheenRoughnessMap',
+    'specularColorMap',
+    'specularIntensityMap',
+    'thicknessMap',
+    'transmissionMap',
+  ];
   materials.forEach((item) => {
     if (!item || disposed.has(item)) return;
-    item.map?.dispose();
+    if (shouldDisposeTextures) {
+      textureKeys.forEach((key) => {
+        const texture = item[key];
+        if (texture && !disposedTextures.has(texture)) {
+          texture.dispose();
+          disposedTextures.add(texture);
+        }
+      });
+    }
     item.dispose();
     disposed.add(item);
   });
@@ -1281,5 +2372,15 @@ function easeOutCubic(value) {
   return 1 - Math.pow(1 - value, 3);
 }
 
-window.SFGTableScene3D = { createTableScene3D };
+function easeInOutCubic(value) {
+  return value < 0.5
+    ? 4 * value * value * value
+    : 1 - Math.pow(-2 * value + 2, 3) / 2;
+}
+
+function lerp(from, to, value) {
+  return from + (to - from) * value;
+}
+
+window.SFGTableScene3D = { createTableScene3D, applyBoardGameWoodTableMaterials };
 window.dispatchEvent(new CustomEvent('sfg-table-scene-ready'));

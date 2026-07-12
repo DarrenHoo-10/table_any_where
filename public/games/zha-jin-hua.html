@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#10251f">
+    <title>Table Any Where - 炸金花</title>
+    <link rel="icon" href="/site-icon-v2.png" type="image/png">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js"></script>
+    <script>
+      window.SFG_CONFIG.visual.tableTheme = 'zha_room';
+    </script>
+    <script type="module" src="/tableScene3d.js"></script>
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <header class="topbar setup-header">
+        <a class="brand" href="/" aria-label="返回 Table Any Where 首页">
+          <img class="brand-mark" src="/site-icon-v2.png" alt="" aria-hidden="true">
+          <span>
+            <span class="brand-title">Table Any Where</span>
+            <span class="brand-subtitle">炸金花在线房间</span>
+          </span>
+        </a>
+        <span id="connectionBadge" class="connection-badge">离线</span>
+      </header>
+
+      <p id="statusText" class="status-text" role="status" aria-live="polite"></p>
+
+      <section id="lobbyView" class="view lobby-view" aria-labelledby="lobbyTitle">
+        <div class="setup-hero">
+          <div class="setup-intro">
+            <div class="setup-copy">
+              <h1 id="lobbyTitle">炸金花</h1>
+              <p>选好头像和玩法，房间创建后把房间号发给朋友就能一起玩。</p>
+            </div>
+            <figure class="setup-table-art">
+              <img
+                src="/design-assets/zha-setup-table-v1.png"
+                width="1536"
+                height="1024"
+                alt="明亮客厅里的木质朋友牌桌，桌面摆着扑克牌和木质游戏筹码"
+                decoding="async"
+              >
+            </figure>
+          </div>
+
+          <section class="control-panel setup-panel" aria-label="设置炸金花房间">
+            <div class="setup-field-heading">
+              <h2>游戏设置</h2>
+            </div>
+
+            <div class="field-group setup-nickname-field">
+              <label for="nicknameInput">怎么称呼你</label>
+              <input id="nicknameInput" autocomplete="nickname" maxlength="16" placeholder="输入昵称">
+            </div>
+
+            <fieldset class="setup-avatar-field">
+              <legend>选一个头像</legend>
+              <div id="preRoomAvatarPicker" class="setup-avatar-picker" role="radiogroup" aria-label="选择进入房间使用的头像"></div>
+            </fieldset>
+
+            <div class="field-group setup-mode-field">
+              <div class="field-label-row">
+                <label for="modeSelect">玩法</label>
+                <button id="modeHelpBtn" class="mode-help-btn" type="button" aria-label="查看当前模式规则" aria-controls="modeRulesPreview" aria-expanded="false" title="查看当前模式规则">?</button>
+              </div>
+              <select id="modeSelect">
+                <option value="zha_jing_hua">炸金花 · 同花大于顺子</option>
+                <option value="tractor">顺子玩法 · 顺子是核心大牌</option>
+              </select>
+            </div>
+
+            <div id="modeRulesPreview" class="mode-rules-preview" hidden>
+              <strong data-mode-rule-title>炸金花模式</strong>
+              <p data-mode-rule-copy>同花比顺子大。</p>
+            </div>
+
+            <div class="settings-grid setup-settings-grid">
+              <div class="field-group">
+                <label for="initialCoinsInput">初始筹码</label>
+                <input id="initialCoinsInput" type="number" min="1" step="1">
+              </div>
+              <div class="field-group">
+                <label for="baseBetInput">底注</label>
+                <input id="baseBetInput" type="number" min="1" step="1">
+              </div>
+              <div class="field-group">
+                <label for="bonusInput">喜钱</label>
+                <input id="bonusInput" type="number" min="0" step="1">
+              </div>
+              <div class="field-group">
+                <label for="betOptionsInput">下注档</label>
+                <input id="betOptionsInput" inputmode="numeric" placeholder="5/10/20/50">
+              </div>
+              <div class="field-group setup-timeout-field">
+                <label for="actionTimeoutInput">每次行动时间（分钟）</label>
+                <input id="actionTimeoutInput" type="number" min="1" max="60" step="1">
+              </div>
+            </div>
+
+            <button id="createRoomBtn" class="primary-btn wide-btn setup-create-btn" type="button">创建房间</button>
+
+            <div class="join-strip setup-direct-join" hidden>
+              <div class="field-group compact-field">
+                <label for="roomCodeInput">房间号</label>
+                <input id="roomCodeInput" autocomplete="off" maxlength="8" placeholder="例如 A8K29Q">
+              </div>
+              <button id="joinRoomBtn" class="secondary-btn" type="button">加入</button>
+            </div>
+          </section>
+        </div>
+
+        <section id="setupRules" class="setup-rules" aria-labelledby="setupRulesTitle">
+          <div class="setup-rules-heading">
+            <h2 id="setupRulesTitle">怎么玩</h2>
+            <p>三张牌，几分钟就能学会。朋友到齐后，房主可以直接开始。</p>
+          </div>
+
+          <ol class="setup-flow" aria-label="开始游戏的三个步骤">
+            <li><span>1</span><strong>创建房间</strong><small>选头像和规则</small></li>
+            <li><span>2</span><strong>邀请好友</strong><small>把房间号发给朋友</small></li>
+            <li><span>3</span><strong>轮流行动</strong><small>下注、看牌或比牌</small></li>
+          </ol>
+
+          <div class="rules-open-grid">
+            <section class="rule-actions" aria-labelledby="turnActionsTitle">
+              <h3 id="turnActionsTitle">轮到你时</h3>
+              <div class="rule-action-list">
+                <article><strong>看牌</strong><p>翻开自己的三张牌，之后按明牌金额下注。</p></article>
+                <article><strong>跟注</strong><p>选择当前允许的下注档，继续留在牌局里。</p></article>
+                <article><strong>加注</strong><p>用更高一档筹码推进牌局，给朋友一点压力。</p></article>
+                <article><strong>弃牌</strong><p>放弃这一手，已经投入奖池的筹码不会退回。</p></article>
+                <article><strong>比牌</strong><p>只剩两人时可以开牌，牌型更大的人赢得奖池。</p></article>
+              </div>
+            </section>
+
+            <section class="rule-ranking" aria-labelledby="rankingTitle">
+              <h3 id="rankingTitle">牌型大小</h3>
+              <div class="ranking-rail" aria-label="从小到大的牌型顺序">
+                <span>普通牌</span><i>&lt;</i><span>对子</span><i>&lt;</i><span>顺子</span><i>&lt;</i><span>同花</span><i>&lt;</i><span>同花顺</span><i>&lt;</i><span>豹子</span>
+              </div>
+              <p class="ranking-note">A-2-3 是最小顺子；豹子仍然是最大牌型。</p>
+            </section>
+          </div>
+
+          <div class="rules-bottom-grid">
+            <section class="mode-compare" aria-labelledby="modeCompareTitle">
+              <h3 id="modeCompareTitle">两种玩法</h3>
+              <div>
+                <article data-mode-card="zha_jing_hua"><strong>炸金花玩法</strong><p>同花高于顺子，沿用更常见的炸金花牌型顺序。</p></article>
+                <article data-mode-card="tractor"><strong>顺子玩法</strong><p>顺子高于同花和同花顺，更突出连续牌的价值。</p></article>
+              </div>
+            </section>
+            <section class="rule-settlement" aria-labelledby="settlementTitle">
+              <h3 id="settlementTitle">结算</h3>
+              <p>每手先扣底注，下注、照牌和比牌花费都会进入奖池。豹子按设置发放喜钱；最终结算会显示每位玩家的本金、余额和盈亏。</p>
+            </section>
+          </div>
+
+          <a class="rules-back-link" href="#lobbyTitle">回到设置</a>
+        </section>
+      </section>
+
+      <section id="tableView" class="view table-view" hidden>
+        <header class="game-room-topbar" aria-label="炸金花房间导航">
+          <a class="game-nav-pill" href="/">返回大厅</a>
+          <div class="game-title-lockup">
+            <span class="game-logo-chip" aria-hidden="true">金</span>
+            <strong>炸金花</strong>
+            <span>标准场</span>
+          </div>
+          <button class="game-room-code-pill" type="button" data-copy-room-trigger>
+            <span>房间号：</span>
+            <strong data-room-code-inline>------</strong>
+            <span>复制</span>
+          </button>
+          <span class="game-public-pill">公开房间</span>
+        </header>
+
+        <aside class="rotate-phone-hint" aria-label="横屏提示">
+          <div>
+            <strong>横屏体验更好</strong>
+            <span>可以继续竖屏玩，旋转手机会获得完整牌桌视角。</span>
+          </div>
+          <button id="dismissRotateHintBtn" type="button" aria-label="关闭横屏提示">×</button>
+        </aside>
+
+        <section id="roomPanel" class="room-panel" role="button" tabindex="0" aria-label="点击复制房间号">
+          <div>
+            <div class="game-panel-title">
+              <strong>房间信息</strong>
+              <span>筹码与座位</span>
+            </div>
+            <div class="room-setting-list" aria-label="房间基础配置">
+              <p><span>游戏模式</span><b>炸金花</b></p>
+              <p><span>玩家人数</span><b>最多 12 人</b></p>
+              <p><span>回合时间</span><b>3 分钟</b></p>
+              <p><span>允许观战</span><b>开启</b></p>
+            </div>
+            <p class="section-kicker">房间号 <span class="room-copy-hint">点击复制</span></p>
+            <h2 id="roomCodeText">------</h2>
+            <p data-room-meta class="room-meta">等待同步房间配置</p>
+          </div>
+          <button id="roomPanelToggleBtn" class="room-panel-toggle" type="button" aria-expanded="true" aria-label="折叠房间信息">-</button>
+        </section>
+        <div class="room-actions">
+          <button id="openAvatarBtn" class="ghost-btn" type="button">选择头像</button>
+          <button id="leaveRoomBtn" class="danger-btn" type="button">离开</button>
+        </div>
+
+        <section id="avatarModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card" role="dialog" aria-modal="true" aria-labelledby="avatarModalTitle">
+            <div class="panel-title">
+              <h3 id="avatarModalTitle">选择头像</h3>
+              <span data-avatar-help>同一房间头像不能重复</span>
+            </div>
+            <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-label="选择头像"></div>
+            <button id="closeAvatarModalBtn" class="ghost-btn wide-btn" type="button">稍后再选</button>
+          </div>
+        </section>
+
+        <section id="peekTargetModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekTargetModalTitle">
+            <div class="panel-title">
+              <h3 id="peekTargetModalTitle">选择照牌玩家</h3>
+              <span>对方也需要已看牌</span>
+            </div>
+            <div id="peekTargetOptions" class="peek-target-list"></div>
+            <button id="closePeekTargetModalBtn" class="ghost-btn wide-btn" type="button">取消</button>
+          </div>
+        </section>
+
+        <section id="peekResultModal" class="avatar-modal" hidden>
+          <div class="avatar-modal-card peek-modal-card" role="dialog" aria-modal="true" aria-labelledby="peekResultModalTitle">
+            <div class="panel-title">
+              <h3 id="peekResultModalTitle">照牌结果</h3>
+              <span>5 秒后自动关闭</span>
+            </div>
+            <div id="peekResultBody" class="peek-result-body"></div>
+            <button id="confirmPeekResultBtn" class="primary-btn wide-btn" type="button">确认</button>
+          </div>
+        </section>
+
+        <section class="felt-table">
+          <section id="tableScene3d" class="table-scene-3d" aria-label="3D 发牌桌">
+            <div class="table-scene-status">加载 3D 牌桌...</div>
+          </section>
+
+          <div class="zha-room-art" aria-hidden="true">
+            <div class="zha-seat-card zha-seat-card-1">
+              <span>1</span>
+              <strong>房主</strong>
+              <small>已准备</small>
+            </div>
+            <div class="zha-seat-card zha-seat-card-2">
+              <span>2</span>
+              <strong>空座位</strong>
+              <small>邀请好友</small>
+            </div>
+            <div class="zha-seat-card zha-seat-card-3">
+              <span>3</span>
+              <strong>空座位</strong>
+              <small>等待加入</small>
+            </div>
+            <div class="zha-seat-card zha-seat-card-4">
+              <span>4</span>
+              <strong>空座位</strong>
+              <small>添加玩家</small>
+            </div>
+          </div>
+
+          <div id="tableTurnTimer" class="table-turn-timer" aria-live="polite" hidden></div>
+
+          <div class="table-metrics">
+            <article>
+              <span>奖池</span>
+              <strong id="potText">0</strong>
+            </article>
+            <article>
+              <span>当前发言</span>
+              <strong id="currentTurnText">-</strong>
+            </article>
+          </div>
+
+          <div class="card-zone">
+            <section class="hand-panel">
+              <div class="panel-title">
+                <h3>我的牌</h3>
+                <span>默认暗牌</span>
+              </div>
+              <div id="myCards" class="card-row"></div>
+            </section>
+
+            <section class="hand-panel">
+              <div class="panel-title">
+                <h3>照牌</h3>
+                <span>每手一次</span>
+              </div>
+              <div id="peekedCards" class="peek-zone"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="actions-panel">
+          <div class="game-panel-title">
+            <strong>快捷操作</strong>
+            <span>房主控制</span>
+          </div>
+          <div id="actions" class="actions-grid"></div>
+          <section id="settlementPanel" class="settlement-panel" hidden>
+            <h3 data-settlement-title>本手结算</h3>
+            <p data-settlement-detail>等待结算结果</p>
+          </section>
+          <div class="round-actions">
+            <button id="startHandBtn" class="primary-btn" type="button">开始游戏</button>
+            <button id="continueHandBtn" class="secondary-btn" type="button">继续发牌</button>
+            <button id="finishGameBtn" class="ghost-btn" type="button">最终结算</button>
+          </div>
+        </section>
+
+        <aside class="players-panel">
+          <div class="panel-title">
+            <h3>准备进度</h3>
+            <span>玩家与筹码</span>
+          </div>
+          <ul id="playerList" class="player-list"></ul>
+        </aside>
+
+        <section class="room-chat-panel" aria-label="房间动态">
+          <div class="game-panel-title">
+            <strong>房间动态</strong>
+            <span>系统消息</span>
+          </div>
+          <div class="chat-feed">
+            <p><b>系统</b><span>房间已创建，邀请好友输入房间号加入。</span></p>
+            <p><b>提示</b><span>所有玩家选择头像后，房主可以开始发牌。</span></p>
+          </div>
+        </section>
+
+        <section class="room-rules-panel" aria-label="游戏规则简介">
+          <div class="game-panel-title">
+            <strong>房间设置</strong>
+            <span>炸金花</span>
+          </div>
+          <div class="settings-summary-list" aria-label="当前房间设置">
+            <p><span>游戏模式</span><b>炸金花</b></p>
+            <p><span>初始金额</span><b>1000</b></p>
+            <p><span>底注</span><b>5</b></p>
+            <p><span>下注档</span><b>5/10/20/50</b></p>
+          </div>
+          <details id="roomRulesBrief">
+            <summary>
+              <span>游戏规则</span>
+              <strong data-room-rule-title>炸金花模式</strong>
+            </summary>
+            <div class="room-rules-content">
+              <p data-room-rule-summary>等待同步房间规则。</p>
+              <ul data-room-rule-points></ul>
+            </div>
+          </details>
+        </section>
+      </section>
+
+      <section id="finalView" class="view final-view" hidden>
+        <div class="final-card">
+          <p class="section-kicker">最终结算</p>
+          <h2>金币榜单</h2>
+          <ol id="rankingList" class="ranking-list"></ol>
+          <button id="backHomeBtn" class="primary-btn wide-btn" type="button">返回首页</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

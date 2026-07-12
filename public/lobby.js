@@ -1,7 +1,7 @@
 (() => {
   const GAME_PATH = window.location.protocol === "file:"
     ? "http://127.0.0.1:8080/games/zha-jin-hua.html"
-    : "/games/zha-jin-hua.html";
+    : new URL("./games/zha-jin-hua.html", window.location.href).pathname;
   const ROOM_ID_PATTERN = /^[A-Z0-9]{1,8}$/;
   const gameCatalog = Object.freeze([
     { id: "zha-jin-hua", status: "available", href: GAME_PATH + "?setup=1" },

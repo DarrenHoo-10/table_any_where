@@ -24,9 +24,12 @@ const DEFAULT_CAMERA_DISTANCE = 8.9;
 const DEFAULT_CAMERA_TARGET_Y = 0.04;
 const ZHA_CAMERA_TRANSITION_MS = 1250;
 const ZHA_ROOM_SEATS = 8;
+const ZHA_ROOM_FLOOR_Y = -0.28;
+const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = 0.18;
 const ZHA_CHAIR_TARGET_HEIGHT = 1.72;
-const DEFAULT_CHAIR_ASSET_URL = '/assets/models/armchair-01-game.glb';
-const DEFAULT_CARD_ASSET_BASE_URL = '/assets/cards/ornate-v1';
+const PUBLIC_BASE_PATH = String(window.SFG_CONFIG?.publicBasePath || '').replace(/\/+$/g, '');
+const DEFAULT_CHAIR_ASSET_URL = `${PUBLIC_BASE_PATH}/assets/models/armchair-01-game.glb`;
+const DEFAULT_CARD_ASSET_BASE_URL = `${PUBLIC_BASE_PATH}/assets/cards/ornate-v1`;
 const PLAYER_CHIP_LIMIT = 50;
 const POT_CHIP_LIMIT = 50;
 const CHIP_HEIGHT = 0.026;
@@ -461,7 +464,7 @@ class TableScene3D {
       })
     );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.28;
+    floor.position.y = ZHA_ROOM_FLOOR_Y;
     floor.receiveShadow = true;
     this.scene.add(floor);
 
@@ -580,10 +583,11 @@ class TableScene3D {
       const seat = seatPosition(index, ZHA_ROOM_SEATS, 4.05, 0.82);
       const chairSlot = new THREE.Group();
       chairSlot.name = `Zha_Chair_Slot_${index + 1}`;
-      chairSlot.position.set(seat.x, -0.02, seat.z);
+      chairSlot.position.set(seat.x, ZHA_ROOM_FLOOR_Y, seat.z);
       chairSlot.rotation.y = Math.atan2(seat.x, seat.z);
       const fallbackChair = this.createZhaRoomChair(index);
       fallbackChair.name = 'Zha_Chair_Procedural_Fallback';
+      fallbackChair.position.y = ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET;
       chairSlot.add(fallbackChair);
       this.zhaRoomChairSlots.push(chairSlot);
       this.scene.add(chairSlot);

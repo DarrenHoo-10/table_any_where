@@ -13,9 +13,10 @@ const ENTRY_AUTO_START = ENTRY_PARAMS.get('autostart') === '1';
 const ENTRY_ROOM_REQUESTED = ENTRY_PARAMS.has('room');
 const ENTRY_ROOM_ID = normalizeEntryRoomId(ENTRY_PARAMS.get('room'));
 const ENTRY_SETUP = ENTRY_PARAMS.get('setup') === '1';
-const AVATAR_IMAGE_BASE = '/player-avatars';
+const PUBLIC_BASE_PATH = String(window.SFG_CONFIG?.publicBasePath || '').replace(/\/+$/g, '');
+const AVATAR_IMAGE_BASE = `${PUBLIC_BASE_PATH}/player-avatars`;
 const CARD_ASSET_BASE = String(
-  window.SFG_CONFIG?.visual?.cardAssetBaseUrl || '/assets/cards/ornate-v1'
+  window.SFG_CONFIG?.visual?.cardAssetBaseUrl || `${PUBLIC_BASE_PATH}/assets/cards/ornate-v1`
 ).replace(/\/+$/g, '');
 
 const ZODIAC_AVATARS = [
@@ -286,7 +287,8 @@ function connect() {
   if (state.ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.ws.readyState)) return;
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${location.host}`;
+  const basePath = location.pathname.endsWith('/') ? location.pathname : `${location.pathname}/`;
+  const url = `${protocol}//${location.host}${basePath}`;
   state.ws = new WebSocket(url);
   state.status = `连接中 ${url}`;
 

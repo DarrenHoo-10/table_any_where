@@ -17,7 +17,7 @@ test('home page presents the relaxed friends entry and only advertises available
   assert.match(html, /class="brand-mark" src="\.\/site-icon-v2\.png"/);
   assert.match(html, /炸金花/);
   assert.match(html, /data-quick-join/);
-  assert.match(html, /href="\/games\/zha-jin-hua\.html\?setup=1"/);
+  assert.match(html, /href="\.\/games\/zha-jin-hua\.html\?setup=1"/);
   assert.equal(html.includes('?autostart=1'), false);
   assert.match(html, /data-status="available"/);
   assert.match(html, /data-status="coming-soon"/);
@@ -36,7 +36,8 @@ test('home page presents the relaxed friends entry and only advertises available
   assert.match(lobbyJs, /window\.location\.assign/);
   assert.match(gameHtml, /class="game-room-topbar"/);
   assert.match(gameHtml, /class="room-chat-panel"/);
-  assert.match(appJs, /const AVATAR_IMAGE_BASE = '\/player-avatars';/);
+  assert.match(appJs, /const PUBLIC_BASE_PATH/);
+  assert.match(appJs, /player-avatars/);
   assert.match(appJs, /autoSelectAvatarIfNeeded/);
 });
 
@@ -51,7 +52,7 @@ test('zha setup page presents avatar, room parameters, and complete rules before
   assert.match(html, /<h2>游戏设置<\/h2>/);
   assert.doesNotMatch(html, /设置好这一桌，再邀请朋友加入/);
   assert.doesNotMatch(html, /<h2>游戏设置<\/h2>[\s\S]*都有默认值/);
-  assert.match(html, /class="brand-mark" src="\/site-icon-v2\.png"/);
+  assert.match(html, /class="brand-mark" src="\.\.\/site-icon-v2\.png"/);
   assert.match(html, /id="preRoomAvatarPicker"/);
   assert.match(html, /id="setupRules"/);
   assert.match(html, /怎么玩/);
@@ -108,7 +109,7 @@ test('visual table theme defaults to classic and supports zha room scene', () =>
   const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
   const css = fs.readFileSync(path.join(PUBLIC_DIR, 'styles.css'), 'utf8');
 
-  assert.match(html, /<script src="\/config\.js"><\/script>[\s\S]*<script type="module" src="\/tableScene3d\.js"><\/script>/);
+  assert.match(html, /<script src="\.\.\/config\.js"><\/script>[\s\S]*<script type="module" src="\.\.\/tableScene3d\.js"><\/script>/);
   assert.match(html, /tableTheme = 'zha_room'/);
   assert.match(configJs, /tableTheme: 'classic'/);
   assert.match(configJs, /red_wood_tray/);
@@ -222,6 +223,16 @@ test('zha room scene uses procedural room props and first person camera transiti
   assert.match(tableScene, /-0\.34, 0\.46/);
   assert.match(updateCameraBlock, /lookYawOffset/);
   assert.match(tableScene, /__SFG_TABLE_SCENE_DIAGNOSTICS__/);
+});
+
+test('zha room chairs rest on the room floor instead of floating above it', () => {
+  const tableScene = fs.readFileSync(path.join(PUBLIC_DIR, 'tableScene3d.js'), 'utf8');
+  const zhaSceneBlock = getMethodBlock(tableScene, 'installZhaRoomScene');
+
+  assert.match(tableScene, /const ZHA_ROOM_FLOOR_Y = -0\.28;/);
+  assert.match(tableScene, /const ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET = 0\.18;/);
+  assert.match(zhaSceneBlock, /chairSlot\.position\.set\(seat\.x, ZHA_ROOM_FLOOR_Y, seat\.z\)/);
+  assert.match(zhaSceneBlock, /fallbackChair\.position\.y = ZHA_PROCEDURAL_CHAIR_FLOOR_OFFSET;/);
 });
 
 test('desktop zha room playing state clears side panels and centers action strip', () => {
